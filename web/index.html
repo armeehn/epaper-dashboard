@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E-Paper Dashboard Setup</title>
+<link rel="stylesheet" href="/bootstrap.min.css">
+<style>
+  body { background: #f5f2ec; }
+  .brand-dot { color: #c0392b; }
+  .step-hidden { display: none !important; }
+  .wifi-row { cursor: pointer; }
+  .wifi-row.active { background: #fdf0ee; border-color: #c0392b; }
+  .rssi { font-variant-numeric: tabular-nums; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
+  .card { border-radius: 1rem; }
+  .btn-epaper { background: #1a1a1a; color: #fff; }
+  .btn-epaper:hover { background: #333; color: #fff; }
+  .btn-red { background: #c0392b; color: #fff; }
+  .btn-red:hover { background: #a93226; color: #fff; }
+</style>
+</head>
+<body>
+<div class="container py-4" style="max-width: 640px;">
+
+  <div class="text-center mb-3">
+    <h3 class="fw-bold mb-0">E-Paper Dashboard <span class="brand-dot">&bull;</span> Setup</h3>
+    <div class="text-secondary small" id="hdr-sub">Let's get your display online</div>
+  </div>
+
+  <div class="progress mb-3" style="height: 6px;">
+    <div class="progress-bar bg-danger" id="progress" style="width: 5%;"></div>
+  </div>
+
+  <!-- STEP 0: welcome -->
+  <div class="card shadow-sm step" id="step-0">
+    <div class="card-body p-4">
+      <h5 class="card-title">Welcome 👋</h5>
+      <p>This wizard runs <strong>on the display itself</strong>. In the next few steps it will:</p>
+      <ul class="mb-3">
+        <li>join your home WiFi,</li>
+        <li>connect to your <strong>email</strong> (IMAP — works with Migadu, Fastmail, and most providers),</li>
+        <li>find your <strong>calendar</strong> (CalDAV auto-discovery, or an ICS link),</li>
+        <li>set your <strong>weather</strong> location, clock and refresh schedule.</li>
+      </ul>
+      <p class="text-secondary small mb-3">Each step is tested live before you move on, so problems show up here — not as a blank screen later. Nothing leaves the device: credentials are stored only in its internal flash.</p>
+      <button class="btn btn-epaper w-100" onclick="go(1)">Start setup</button>
+    </div>
+  </div>
+
+  <!-- STEP 1: wifi -->
+  <div class="card shadow-sm step step-hidden" id="step-1">
+    <div class="card-body p-4">
+      <h5 class="card-title">1 · WiFi</h5>
+      <p class="text-secondary small">Pick your home network (2.4 GHz only — the ESP32 can't see 5 GHz networks).</p>
+      <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-outline-secondary btn-sm" id="btn-scan" onclick="scanWifi()">Scan networks</button>
+        <div class="spinner-border spinner-border-sm mt-1 step-hidden" id="scan-spin"></div>
+      </div>
+      <div class="list-group mb-3" id="wifi-list"></div>
+      <div class="mb-3">
+        <label class="form-label">Network name (SSID)</label>
+        <input class="form-control" id="wifi-ssid" placeholder="MyHomeWiFi">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Password</label>
+        <input type="password" class="form-control" id="wifi-pass">
+      </div>
+      <div id="wifi-alert"></div>
+      <div class="alert alert-light border small py-2">
+        While the device joins your network its setup hotspot may drop for ~10 seconds.
+        <strong>Stay connected to the setup WiFi</strong> — this page will recover by itself.
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" onclick="go(0)">Back</button>
+        <button class="btn btn-epaper flex-fill" id="btn-wifi" onclick="joinWifi()">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: email -->
+  <div class="card shadow-sm step step-hidden" id="step-2">
+    <div class="card-body p-4">
+      <h5 class="card-title">2 · Email (IMAP)</h5>
+      <div class="mb-3">
+        <label class="form-label">Provider</label>
+        <select class="form-select" id="im-provider" onchange="providerChanged()">
+          <option value="migadu" selected>Migadu</option>
+          <option value="fastmail">Fastmail</option>
+          <option value="gmail">Gmail (app password)</option>
+          <option value="custom">Other / custom</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Email address</label>
+        <input class="form-control" id="im-user" placeholder="you@yourdomain.com" onchange="emailChanged()">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Password</label>
+        <input type="password" class="form-control" id="im-pass">
+        <div class="form-text" id="im-pass-hint"></div>
+      </div>
+      <details class="mb-3">
+        <summary class="text-secondary small">Advanced (host, port, folder)</summary>
+        <div class="row g-2 mt-1">
+          <div class="col-7"><label class="form-label small">IMAP host</label><input class="form-control form-control-sm" id="im-host"></div>
+          <div class="col-2"><label class="form-label small">Port</label><input class="form-control form-control-sm" id="im-port" value="993"></div>
+          <div class="col-3"><label class="form-label small">Folder</label><input class="form-control form-control-sm" id="im-folder" value="INBOX"></div>
+        </div>
+      </details>
+      <div class="row g-2 mb-3">
+        <div class="col-8">
+          <label class="form-label">Show on the dashboard</label>
+          <select class="form-select" id="im-show" onchange="showChanged()">
+            <option value="unseen" selected>Unread messages</option>
+            <option value="flagged">Flagged / starred messages</option>
+            <option value="both">Unread or flagged</option>
+            <option value="custom">Custom IMAP search…</option>
+          </select>
+        </div>
+        <div class="col-4">
+          <label class="form-label">How many</label>
+          <select class="form-select" id="im-count">
+            <option>3</option><option>4</option><option selected>5</option>
+          </select>
+        </div>
+      </div>
+      <div class="mb-3 step-hidden" id="im-custom-wrap">
+        <input class="form-control mono" id="im-custom" placeholder='e.g. UNSEEN FROM "boss@work.com"'>
+      </div>
+      <div id="im-alert"></div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" onclick="go(1)">Back</button>
+        <button class="btn btn-outline-danger" id="btn-imtest" onclick="testImap()">Test email</button>
+        <button class="btn btn-epaper flex-fill" onclick="go(3)">Next</button>
+      </div>
+      <div class="form-text mt-2">You can also skip email: leave the address empty and press Next.</div>
+    </div>
+  </div>
+
+  <!-- STEP 3: calendar -->
+  <div class="card shadow-sm step step-hidden" id="step-3">
+    <div class="card-body p-4">
+      <h5 class="card-title">3 · Calendar</h5>
+      <div class="btn-group w-100 mb-3" role="group">
+        <input type="radio" class="btn-check" name="calmode" id="cal-caldav" value="caldav" checked onchange="calModeChanged()">
+        <label class="btn btn-outline-dark" for="cal-caldav">CalDAV</label>
+        <input type="radio" class="btn-check" name="calmode" id="cal-ics" value="ics" onchange="calModeChanged()">
+        <label class="btn btn-outline-dark" for="cal-ics">ICS link</label>
+        <input type="radio" class="btn-check" name="calmode" id="cal-none" value="none" onchange="calModeChanged()">
+        <label class="btn btn-outline-dark" for="cal-none">No calendar</label>
+      </div>
+
+      <div id="cal-caldav-wrap">
+        <div class="mb-3">
+          <label class="form-label">CalDAV server</label>
+          <input class="form-control" id="cd-base" placeholder="https://cdav.migadu.com/">
+          <div class="form-text">Migadu: <span class="mono">https://cdav.migadu.com/</span> · Fastmail: <span class="mono">https://caldav.fastmail.com/</span> · Nextcloud: <span class="mono">https://cloud.example.com/remote.php/dav/</span></div>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-6"><label class="form-label">Username</label><input class="form-control" id="cd-user"></div>
+          <div class="col-6"><label class="form-label">Password</label><input type="password" class="form-control" id="cd-pass"></div>
+        </div>
+        <button class="btn btn-outline-danger mb-2" id="btn-discover" onclick="discover()">Find my calendars</button>
+        <div class="list-group mb-2" id="cd-list"></div>
+      </div>
+
+      <div id="cal-ics-wrap" class="step-hidden">
+        <div class="mb-3">
+          <label class="form-label">ICS / iCal URL</label>
+          <input class="form-control" id="ics-url" placeholder="https://…/calendar.ics">
+          <div class="form-text">Google Calendar: Settings → your calendar → "Secret address in iCal format".</div>
+        </div>
+      </div>
+
+      <div id="cal-alert"></div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" onclick="go(2)">Back</button>
+        <button class="btn btn-outline-danger" id="btn-caltest" onclick="testCal()">Test calendar</button>
+        <button class="btn btn-epaper flex-fill" onclick="go(4)">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4: weather -->
+  <div class="card shadow-sm step step-hidden" id="step-4">
+    <div class="card-body p-4">
+      <h5 class="card-title">4 · Weather</h5>
+      <label class="form-label">Your town / city</label>
+      <div class="input-group mb-2">
+        <input class="form-control" id="wx-q" placeholder="e.g. Pasadena" onkeydown="if(event.key==='Enter')geocode()">
+        <button class="btn btn-outline-danger" id="btn-geo" onclick="geocode()">Search</button>
+      </div>
+      <div class="list-group mb-3" id="wx-list"></div>
+      <div class="alert alert-success py-2 step-hidden" id="wx-picked"></div>
+      <div class="row g-2 mb-2">
+        <div class="col-6">
+          <label class="form-label">Temperature</label>
+          <select class="form-select" id="wx-unitT"><option value="f" selected>Fahrenheit</option><option value="c">Celsius</option></select>
+        </div>
+        <div class="col-6">
+          <label class="form-label">Wind</label>
+          <select class="form-select" id="wx-unitW"><option value="mph" selected>mph</option><option value="kmh">km/h</option></select>
+        </div>
+      </div>
+      <div id="wx-alert"></div>
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-outline-secondary" onclick="go(3)">Back</button>
+        <button class="btn btn-epaper flex-fill" onclick="go(5)">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5: clock & refresh -->
+  <div class="card shadow-sm step step-hidden" id="step-5">
+    <div class="card-body p-4">
+      <h5 class="card-title">5 · Clock &amp; refresh</h5>
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <label class="form-label">Clock style</label>
+          <select class="form-select" id="ck-h24"><option value="0" selected>12-hour (AM/PM)</option><option value="1">24-hour</option></select>
+        </div>
+        <div class="col-6">
+          <label class="form-label">Refresh every</label>
+          <select class="form-select" id="rf-min">
+            <option value="3">3 minutes</option>
+            <option value="5" selected>5 minutes</option>
+            <option value="10">10 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">60 minutes</option>
+          </select>
+          <div class="form-text">Each refresh flashes ~25 s — that's how tri-color e-paper works.</div>
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Time zone</label>
+        <select class="form-select" id="ck-tz"></select>
+        <input class="form-control mono mt-2 step-hidden" id="ck-tz-custom" placeholder="POSIX TZ, e.g. PST8PDT,M3.2.0,M11.1.0">
+      </div>
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" id="qt-on" checked>
+        <label class="form-check-label" for="qt-on">Pause refreshes overnight (screen keeps its last image)</label>
+      </div>
+      <div class="row g-2 mb-2" id="qt-range">
+        <div class="col-6"><label class="form-label small">From</label><select class="form-select form-select-sm" id="qt-start"></select></div>
+        <div class="col-6"><label class="form-label small">Until</label><select class="form-select form-select-sm" id="qt-end"></select></div>
+      </div>
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-outline-secondary" onclick="go(4)">Back</button>
+        <button class="btn btn-epaper flex-fill" onclick="buildReview();go(6)">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 6: review -->
+  <div class="card shadow-sm step step-hidden" id="step-6">
+    <div class="card-body p-4">
+      <h5 class="card-title">6 · Review &amp; finish</h5>
+      <table class="table table-sm small" id="review"></table>
+      <div id="fin-alert"></div>
+      <button class="btn btn-red w-100" id="btn-finish" onclick="finish()">Save &amp; start the dashboard</button>
+      <div class="form-text mt-2">The device reboots, this setup network disappears, and the first dashboard appears on the e-paper within about a minute.</div>
+    </div>
+  </div>
+
+  <!-- STEP 7: done -->
+  <div class="card shadow-sm step step-hidden" id="step-7">
+    <div class="card-body p-4 text-center">
+      <div style="font-size:3rem;">✅</div>
+      <h5>All set!</h5>
+      <p class="text-secondary">Configuration saved. The display is rebooting and will draw your dashboard shortly.<br>
+      You can close this page and rejoin your normal WiFi.</p>
+      <p class="small text-secondary">To change settings later: hold the <strong>BOOT</strong> button while pressing <strong>RST</strong> — the setup network will come back.</p>
+    </div>
+  </div>
+
+  <div class="text-center text-secondary small mt-3">
+    e-paper dashboard · setup portal running on the ESP32 at <span class="mono">192.168.4.1</span>
+  </div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
