@@ -8,6 +8,7 @@
 #include "blocks.h"
 #include "blocksig.h"
 #include "fsstore.h"
+#include "net_util.h"
 #include "portal_assets.h"
 
 #include <WiFi.h>
@@ -17,11 +18,17 @@
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
+#include <Update.h>
+#include <esp_ota_ops.h>
+#include <mbedtls/sha256.h>
 
 static WebServer server(80);
 static DNSServer dns;
 static uint32_t s_lastActivity = 0;
 static void touch() { s_lastActivity = millis(); }
+
+static uint16_t s_panelW = 800, s_panelH = 480;
+void portalSetPanelInfo(uint16_t w, uint16_t h) { s_panelW = w; s_panelH = h; }
 
 // async wifi-join state
 static enum { WST_IDLE, WST_CONNECTING, WST_CONNECTED, WST_FAILED } wifiState = WST_IDLE;
@@ -77,12 +84,36 @@ static void hRoot() { sendGz(ASSET_INDEX, ASSET_INDEX_LEN, "text/html"); }
 static void hCss() { sendGz(ASSET_BOOTSTRAP, ASSET_BOOTSTRAP_LEN, "text/css"); }
 static void hJs() { sendGz(ASSET_APPJS, ASSET_APPJS_LEN, "application/javascript"); }
 
+// Everything the setup page needs in order to describe THIS device rather
+// than assume a particular panel, board or chip. The page has no hardware
+// constants of its own; adding a panel preset to config.h is enough to make
+// the UI describe it correctly.
 static void hState() {
   JsonDocument doc;
   doc["ap"] = PORTAL_AP_NAME;
   doc["fw"] = FW_VERSION;
   doc["haveConfig"] = g_set.valid();
   doc["staConnected"] = WiFi.status() == WL_CONNECTED;
+
+  JsonObject dev = doc["device"].to<JsonObject>();
+  dev["panel"] = PANEL_NAME;
+  dev["panelW"] = s_panelW;
+  dev["panelH"] = s_panelH;
+  dev["colors"] = EPD_IS_3C ? 3 : 2;
+  dev["refreshSec"] = PANEL_REFRESH_S;
+  dev["board"] = BOARD_NAME;
+  dev["chip"] = CHIP_NAME;
+  dev["cols"] = GRID_COLS;
+  dev["rows"] = GRID_ROWS;
+  dev["hostname"] = DEVICE_HOSTNAME;
+  dev["apIp"] = WiFi.softAPIP().toString();
+  dev["setupPin"] = SETUP_BUTTON_PIN;
+  dev["registry"] = DEFAULT_REGISTRY_URL;
+
+  // Also kept flat: the browser caches app.js for an hour, so right after an
+  // OTA update a stale copy of the page may still be reading these.
+  doc["panelW"] = s_panelW;
+  doc["panelH"] = s_panelH;
   if (g_set.valid()) {
     JsonDocument cfg;
     settingsToJson(cfg);
@@ -160,6 +191,49 @@ static void hWifiStatus() {
       break;
     default: doc["state"] = "idle";
   }
+  sendJson(doc);
+}
+
+// GET /api/imap/detect?domain=example.com
+// Walks the conventional host names for a mail domain and reports the first
+// one that answers with an IMAP greeting. This is what lets the wizard set up
+// a provider nobody has added to any list.
+static void hImapDetect() {
+  JsonDocument doc;
+  if (WiFi.status() != WL_CONNECTED) {
+    doc["ok"] = false;
+    doc["msg"] = "finish the WiFi step first - the device has no internet yet";
+    sendJson(doc);
+    return;
+  }
+  String domain = server.arg("domain");
+  domain.toLowerCase();
+  domain.trim();
+  int at = domain.indexOf('@');
+  if (at >= 0) domain = domain.substring(at + 1);
+  if (!mailDomainAllowed(domain)) {
+    doc["ok"] = false;
+    doc["msg"] = "that doesn't look like a mail domain";
+    sendJson(doc);
+    return;
+  }
+  const char* prefixes[] = { "imap.", "mail.", "", "imap4.", "secure." };
+  char banner[120];
+  JsonArray tried = doc["tried"].to<JsonArray>();
+  for (const char* pfx : prefixes) {
+    String host = String(pfx) + domain;
+    tried.add(host);
+    if (imapProbe(host.c_str(), 993, banner, sizeof(banner))) {
+      doc["ok"] = true;
+      doc["host"] = host;
+      doc["port"] = 993;
+      doc["banner"] = banner;
+      sendJson(doc);
+      return;
+    }
+  }
+  doc["ok"] = false;
+  doc["msg"] = "no IMAP server answered on the usual names - enter the host under Advanced";
   sendJson(doc);
 }
 
@@ -473,6 +547,145 @@ static void hPreview() {
   if (s_previewHook) s_previewHook();
 }
 
+// ---------------- firmware update (OTA) ----------------
+//
+// POST /api/ota (multipart file upload of epaper-dashboard-app.bin) streams
+// the image into the SPARE app slot via Update; the boot switch only happens
+// after the received bytes pass the optional ?sha256=<hex> check AND the
+// image itself verifies (Update.end runs esp_image_verify). The running slot
+// is untouched until then — an interrupted or corrupted upload changes
+// nothing. Needs a two-slot partition table ("Minimal SPIFFS"); on the old
+// single-slot huge_app table we answer with the one-time USB migration hint.
+static bool s_otaActive = false, s_otaOk = false;
+static char s_otaErr[120] = "";
+static size_t s_otaBytes = 0;
+static mbedtls_sha256_context s_otaSha;
+
+static void otaShaStart() {
+  mbedtls_sha256_init(&s_otaSha);
+#if defined(MBEDTLS_VERSION_NUMBER) && MBEDTLS_VERSION_NUMBER >= 0x03000000
+  mbedtls_sha256_starts(&s_otaSha, 0);
+#else
+  mbedtls_sha256_starts_ret(&s_otaSha, 0);
+#endif
+}
+static void otaShaUpdate(const uint8_t* d, size_t n) {
+#if defined(MBEDTLS_VERSION_NUMBER) && MBEDTLS_VERSION_NUMBER >= 0x03000000
+  mbedtls_sha256_update(&s_otaSha, d, n);
+#else
+  mbedtls_sha256_update_ret(&s_otaSha, d, n);
+#endif
+}
+static void otaShaFinish(uint8_t out[32]) {
+#if defined(MBEDTLS_VERSION_NUMBER) && MBEDTLS_VERSION_NUMBER >= 0x03000000
+  mbedtls_sha256_finish(&s_otaSha, out);
+#else
+  mbedtls_sha256_finish_ret(&s_otaSha, out);
+#endif
+  mbedtls_sha256_free(&s_otaSha);
+}
+
+static void otaFail(const char* msg) {
+  if (!s_otaErr[0]) strlcpy(s_otaErr, msg, sizeof(s_otaErr));
+  if (s_otaActive) {
+    Update.abort();
+    mbedtls_sha256_free(&s_otaSha);
+    s_otaActive = false;
+  }
+  Serial.printf("OTA: FAILED - %s\n", s_otaErr);
+}
+
+static void hOtaUpload() {
+  touch();
+  HTTPUpload& up = server.upload();
+  switch (up.status) {
+    case UPLOAD_FILE_START: {
+      s_otaOk = false;
+      s_otaErr[0] = 0;
+      s_otaBytes = 0;
+      s_otaActive = false;
+      const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
+      if (!next) {
+        otaFail("no spare OTA slot on this partition table - a one-time USB "
+                "flash of the new factory/partition image is needed first "
+                "(see the FLASHING notes in the CI artifact)");
+        return;
+      }
+      Serial.printf("OTA: receiving '%s' into slot %s (%u bytes free)\n",
+                    up.filename.c_str(), next->label, (unsigned)next->size);
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+        otaFail(Update.errorString());
+        return;
+      }
+      otaShaStart();
+      s_otaActive = true;
+      break;
+    }
+    case UPLOAD_FILE_WRITE:
+      if (!s_otaActive) return;
+      if (Update.write(up.buf, up.currentSize) != up.currentSize) {
+        otaFail(Update.errorString());
+        return;
+      }
+      otaShaUpdate(up.buf, up.currentSize);
+      s_otaBytes += up.currentSize;
+      break;
+    case UPLOAD_FILE_END: {
+      if (!s_otaActive) return;
+      s_otaActive = false;             // teardown handled right here
+      uint8_t digest[32];
+      otaShaFinish(digest);
+      String want = server.arg("sha256");
+      want.trim();
+      if (!hexDigestMatches(want.c_str(), digest, sizeof(digest))) {
+        Update.abort();
+        strlcpy(s_otaErr, "SHA-256 mismatch - wrong or corrupted file; "
+                          "nothing was changed", sizeof(s_otaErr));
+        Serial.printf("OTA: FAILED - %s\n", s_otaErr);
+        return;
+      }
+      if (!Update.end(true)) {         // verifies the image, flips boot slot
+        strlcpy(s_otaErr, Update.errorString(), sizeof(s_otaErr));
+        Serial.printf("OTA: FAILED - %s\n", s_otaErr);
+        return;
+      }
+      s_otaOk = true;
+      Serial.printf("OTA: %u bytes flashed and verified, boot slot switched\n",
+                    (unsigned)s_otaBytes);
+      break;
+    }
+    case UPLOAD_FILE_ABORTED:
+      otaFail("upload aborted");
+      break;
+  }
+}
+
+static void hOtaFinish() {
+  JsonDocument doc;
+  doc["ok"] = s_otaOk;
+  doc["bytes"] = (uint32_t)s_otaBytes;
+  if (s_otaOk) {
+    doc["msg"] = "flashed - rebooting into the new firmware";
+    rebootRequested = true;
+    rebootAt = millis() + 1500;
+  } else {
+    doc["msg"] = s_otaErr[0] ? s_otaErr : "no file received";
+  }
+  sendJson(doc);
+}
+
+static void hOtaInfo() {
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["version"] = FW_VERSION;
+  const esp_partition_t* run = esp_ota_get_running_partition();
+  const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
+  doc["running"] = run ? run->label : "?";
+  doc["otaReady"] = (next != nullptr);
+  if (next) doc["slotBytes"] = (uint32_t)next->size;
+  sendJson(doc);
+}
+
 // ---------------- main ----------------
 
 static void registerRoutes(bool captive) {
@@ -485,6 +698,7 @@ static void registerRoutes(bool captive) {
   server.on("/api/wifi", HTTP_POST, hWifiJoin);
   server.on("/api/wifi/status", HTTP_GET, hWifiStatus);
   server.on("/api/test/imap", HTTP_POST, hTestImap);
+  server.on("/api/imap/detect", HTTP_GET, hImapDetect);
   server.on("/api/caldav/discover", HTTP_POST, hDiscover);
   server.on("/api/test/cal", HTTP_POST, hTestCal);
   server.on("/api/geocode", HTTP_GET, hGeocode);
@@ -498,6 +712,8 @@ static void registerRoutes(bool captive) {
   server.on("/api/blocks/policy", HTTP_POST, hBlockPolicy);
   server.on("/api/registry", HTTP_GET, hRegistry);
   server.on("/api/preview", HTTP_POST, hPreview);
+  server.on("/api/ota/info", HTTP_GET, hOtaInfo);
+  server.on("/api/ota", HTTP_POST, hOtaFinish, hOtaUpload);
   if (captive) {
     // captive-portal probes
     server.on("/generate_204", redirectToPortal);        // Android
@@ -534,7 +750,7 @@ void portalRun(PortalReason reason) {
   }
   dns.setErrorReplyCode(DNSReplyCode::NoError);
   dns.start(53, "*", WiFi.softAPIP());
-  MDNS.begin("epaper-dashboard");
+  MDNS.begin(DEVICE_HOSTNAME);
 
   registerRoutes(true);
   server.begin();
@@ -555,12 +771,12 @@ void portalRun(PortalReason reason) {
 }
 
 void portalServeLan(uint32_t idleMs, uint32_t maxMs) {
-  MDNS.begin("epaper-dashboard");
+  MDNS.begin(DEVICE_HOSTNAME);
   registerRoutes(false);
   server.begin();
   touch();
   uint32_t start = millis();
-  Serial.printf("LAN editor window: http://%s/ (and http://epaper-dashboard.local/), "
+  Serial.printf("LAN editor window: http://%s/ (and http://" DEVICE_HOSTNAME ".local/), "
                 "closes after %lus idle\n",
                 WiFi.localIP().toString().c_str(), (unsigned long)(idleMs / 1000));
   while (millis() - s_lastActivity < idleMs && millis() - start < maxMs) {

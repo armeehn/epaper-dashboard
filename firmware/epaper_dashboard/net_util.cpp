@@ -270,3 +270,33 @@ String resolveHref(const String& baseUrl, const String& href) {
   }
   return origin + path + href;
 }
+
+bool hexDigestMatches(const char* expectedHex, const uint8_t* digest, size_t digestLen) {
+  if (!expectedHex || !expectedHex[0]) return true;   // check is optional
+  if (strlen(expectedHex) != digestLen * 2) return false;
+  auto nib = [](char c) -> int {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+  };
+  for (size_t i = 0; i < digestLen; i++) {
+    int hi = nib(expectedHex[2 * i]), lo = nib(expectedHex[2 * i + 1]);
+    if (hi < 0 || lo < 0) return false;
+    if ((uint8_t)((hi << 4) | lo) != digest[i]) return false;
+  }
+  return true;
+}
+
+bool mailDomainAllowed(const String& d) {
+  if (d.length() < 3 || d.length() > 63 || d.indexOf('.') < 0) return false;
+  if (d.endsWith(".local") || d == "localhost") return false;
+  bool allDigitsAndDots = true;
+  for (size_t i = 0; i < d.length(); i++) {
+    char c = d[i];
+    bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-';
+    if (!ok) return false;
+    if (!isdigit((unsigned char)c) && c != '.') allDigitsAndDots = false;
+  }
+  return !allDigitsAndDots;   // reject bare IPv4 literals
+}

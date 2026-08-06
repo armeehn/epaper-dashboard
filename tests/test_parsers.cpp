@@ -11,6 +11,7 @@
 #include "../firmware/epaper_dashboard/settings.h"
 #include "../firmware/epaper_dashboard/blocks.h"
 #include "../firmware/epaper_dashboard/blocksig.h"
+#include "../firmware/epaper_dashboard/trusted_keys.h"
 #include "../firmware/epaper_dashboard/fsstore.h"
 #include <LittleFS.h>
 
@@ -84,6 +85,15 @@ static void testNetUtil() {
   String xs = "a&amp;b&lt;c&#13;&gt;";
   xmlUnescape(xs);
   CHECK_STR(xs.c_str(), "a&b<c>", "xmlUnescape");
+
+  // OTA digest gate
+  const uint8_t dg[4] = {0xde, 0xad, 0xbe, 0xef};
+  CHECK(hexDigestMatches("", dg, 4), "empty expected passes (optional check)");
+  CHECK(hexDigestMatches("deadbeef", dg, 4), "hex match lowercase");
+  CHECK(hexDigestMatches("DEADBEEF", dg, 4), "hex match uppercase");
+  CHECK(!hexDigestMatches("deadbeee", dg, 4), "wrong digest refused");
+  CHECK(!hexDigestMatches("deadbe", dg, 4), "wrong length refused");
+  CHECK(!hexDigestMatches("deadbeXX", dg, 4), "non-hex refused");
 }
 
 static const char* SAMPLE_ICS =
@@ -353,6 +363,18 @@ static void testBlocks() {
   String url = blockSubstUrl(def, ip.as<JsonObjectConst>());
   CHECK_STR(url.c_str(), "https://api.example.com/x?q=x%26y", "url subst+encode");
 
+  // IMAP auto-detection turns a typed domain into connection attempts, so the
+  // same LAN-probing concerns as block URLs apply.
+  CHECK(mailDomainAllowed("example.com"), "mail domain ok");
+  CHECK(mailDomainAllowed("mail.co.uk"), "mail domain with two labels ok");
+  CHECK(!mailDomainAllowed("localhost"), "localhost refused");
+  CHECK(!mailDomainAllowed("printer.local"), "mail .local refused");
+  CHECK(!mailDomainAllowed("192.168.1.1"), "mail ip literal refused");
+  CHECK(!mailDomainAllowed("nodot"), "mail domain without a dot refused");
+  CHECK(!mailDomainAllowed("bad domain.com"), "mail domain with a space refused");
+  CHECK(!mailDomainAllowed("evil.com/x"), "mail domain with a path refused");
+  CHECK(mailDomainAllowed("mail-1.example.com"), "digits and dashes allowed");
+
   CHECK(blockUrlAllowed("https://api.example.com/x", err, sizeof(err)), "url ok");
   CHECK(!blockUrlAllowed("http://api.example.com/x", err, sizeof(err)), "http refused");
   CHECK(!blockUrlAllowed("https://192.168.1.1/x", err, sizeof(err)), "private ip refused");
@@ -368,6 +390,8 @@ static void testEpbAndStore() {
   system("rm -rf /tmp/fsroot-test");
   LittleFS.begin(true);
 
+  // registry/ is the epaper-blocks submodule; run_tests.sh refuses to start
+  // without it, so an empty read here means a genuinely broken fixture.
   String epb = ([]{ FILE* f = fopen("registry/blocks/crypto-price/crypto-price.epb", "rb");
     String s; if (f) { int c; while ((c = fgetc(f)) != EOF) s += (char)c; fclose(f); } return s; })();
   CHECK(epb.length() > 100, "epb file present");
@@ -375,7 +399,9 @@ static void testEpbAndStore() {
   String payload; EpbInfo info;
   CHECK(epbOpen(epb.c_str(), epb.length(), payload, info), "envelope parses");
   CHECK(info.sigPresent && info.sigOk, "REAL ECDSA signature verifies");
-  CHECK_STR(info.keyid, "demo-registry-2026", "keyid");
+  // Tied to the anchor rather than a literal: rotating the registry key must
+  // update trusted_keys.h and the submodule together, never just one.
+  CHECK_STR(info.keyid, TRUSTED_KEYS[0].keyid, "keyid matches the trust anchor");
 
   // tamper with one payload byte -> must fail
   String bad = epb;

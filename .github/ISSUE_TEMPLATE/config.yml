@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contribute or report a block
+    url: https://github.com/armeehn/epaper-blocks/issues
+    about: Blocks live in their own repository — request, fix or contribute one there.
+  - name: Security vulnerability
+    url: https://github.com/armeehn/epaper-dashboard/security/advisories/new
+    about: Report privately instead of opening a public issue.

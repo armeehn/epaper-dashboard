@@ -13,6 +13,10 @@ int    b64decode(const char* in, int inLen, uint8_t* out, int outCap);
 void   rfc2047ToAscii(const char* src, char* dst, size_t dstLen);
 // Fold UTF-8 to printable ASCII (Latin-1 accents transliterated, rest '?').
 void   utf8ToAscii(const char* src, char* dst, size_t dstLen);
+// Compare a hex string against a binary digest (case-insensitive).
+// An empty/NULL expectedHex passes (the check is optional); anything else
+// must be exactly 2*digestLen hex chars and match.
+bool   hexDigestMatches(const char* expectedHex, const uint8_t* digest, size_t digestLen);
 
 // --- time ---
 time_t timegmCivil(int y, int mo, int d, int h, int mi, int s);  // UTC fields -> epoch
@@ -28,3 +32,7 @@ time_t icsStampToEpoch(const char* s, bool* isDateOnly, bool* isUtc);
 bool splitUrl(const String& url, String& host, uint16_t& port, String& path, bool& tls);
 // Resolve an href (absolute URL or absolute path) against a base URL.
 String resolveHref(const String& baseUrl, const String& href);
+// True only for a public DNS mail domain. Guards IMAP auto-detection, which
+// would otherwise let the setup page aim connection attempts at the LAN:
+// rejects .local, localhost and bare IPv4 literals.
+bool mailDomainAllowed(const String& d);
