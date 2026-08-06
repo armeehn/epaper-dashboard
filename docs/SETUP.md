@@ -15,6 +15,18 @@
 4. **Save & start** — the device reboots and draws the first dashboard within
    about a minute.
 
+<div align="center">
+
+| 1 · what the panel shows first | 2 · the wizard in your browser | 3 · the finished dashboard |
+| :---: | :---: | :---: |
+| ![welcome screen on the panel](dashboard_setup.png) | ![wizard welcome step](wizard_welcome.png) | ![rendered dashboard](dashboard_preview.png) |
+
+| Email step — tested live against your server | Calendar step — discovered CalDAV calendars |
+| :---: | :---: |
+| ![wizard email step](wizard_email.png) | ![wizard calendar step](wizard_calendar.png) |
+
+</div>
+
 ## Buttons
 
 | Gesture | Effect |

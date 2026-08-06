@@ -32,6 +32,7 @@
     <li class="nav-item"><a class="nav-link active" data-tab="setup" href="#">Setup</a></li>
     <li class="nav-item"><a class="nav-link" data-tab="layout" href="#">Layout</a></li>
     <li class="nav-item"><a class="nav-link" data-tab="blocks" href="#">Blocks</a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="update" href="#">Update</a></li>
   </ul>
 
   <div id="tab-setup">
@@ -95,7 +96,9 @@
           <option value="migadu" selected>Migadu</option>
           <option value="fastmail">Fastmail</option>
           <option value="gmail">Gmail (app password)</option>
-          <option value="custom">Other / custom</option>
+          <option value="icloud">iCloud Mail (app password)</option>
+          <option value="mailboxorg">mailbox.org</option>
+          <option value="custom">Other / custom (any IMAP server)</option>
         </select>
       </div>
       <div class="mb-3">
@@ -325,7 +328,8 @@
         </div>
         <h6>Install from registry</h6>
         <div class="input-group input-group-sm mb-2">
-          <input class="form-control mono" id="bl-reg-url" placeholder="https://…/index.json">
+          <input class="form-control mono" id="bl-reg-url" placeholder="https://…/index.json"
+                 value="https://raw.githubusercontent.com/armeehn/epaper-dashboard/main/registry/index.json">
           <button class="btn btn-outline-dark" onclick="blRegistry()">Load</button>
         </div>
         <div class="list-group mb-3" id="bl-reg-list"></div>
@@ -337,6 +341,47 @@
         <textarea class="form-control mono form-control-sm mb-2" id="bl-paste" rows="3" placeholder='paste a .epb here'></textarea>
         <button class="btn btn-outline-dark btn-sm" onclick="blInstallPaste()">Install pasted block</button>
         <div id="bl-alert" class="mt-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UPDATE (OTA) TAB -->
+  <div id="tab-update" class="step-hidden">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body p-3">
+        <h5>Firmware update (over the air)</h5>
+        <div class="text-secondary small mb-2" id="fw-status">Checking this device…</div>
+        <div id="fw-form" class="step-hidden">
+          <div class="mb-2">
+            <label class="form-label small mb-1">Firmware file — the <span class="mono">…-app.bin</span> for <em>your panel</em> from the GitHub Actions artifact (not the factory image)</label>
+            <input class="form-control form-control-sm" type="file" id="fw-file" accept=".bin">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">SHA-256 (optional but recommended — paste from <span class="mono">sha256sums-*.txt</span> in the same artifact)</label>
+            <input class="form-control form-control-sm mono" id="fw-sha" placeholder="leave blank to skip the check">
+          </div>
+          <button class="btn btn-epaper" id="btn-fwup" onclick="fwUpload()">Upload &amp; flash</button>
+          <div class="progress mt-2 step-hidden" id="fw-prog-wrap" style="height:20px">
+            <div class="progress-bar" id="fw-prog" style="width:0%">0%</div>
+          </div>
+        </div>
+        <div id="fw-migrate" class="step-hidden">
+          <div class="alert alert-warning small mb-0">
+            This device still runs the old single-slot (<span class="mono">huge_app</span>) partition
+            table, which has no room for a second firmware copy — one last <strong>USB</strong> flash
+            is needed to switch to the OTA-capable table. Follow the <strong>MIGRATING</strong> section
+            of the <span class="mono">FLASHING-*.txt</span> in the CI artifact (your WiFi &amp; settings
+            survive; saved layout &amp; installed blocks reset once). Every update after that works
+            from this page.
+          </div>
+        </div>
+        <div id="fw-alert" class="mt-2"></div>
+        <div class="text-secondary small mt-2">
+          The new image goes into the spare slot and is verified before the device switches to
+          it — a failed or interrupted upload leaves the current firmware untouched. After
+          flashing, the device reboots, redraws, and this editor window reopens by itself
+          (give it ~1 minute).
+        </div>
       </div>
     </div>
   </div>

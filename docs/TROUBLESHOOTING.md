@@ -1,5 +1,12 @@
 # Troubleshooting
 
+> [!NOTE]
+> A fetch that fails never blanks the screen. The panel keeps the last good
+> data, raises a red **OFFLINE** border and names the failing section — so the
+> display itself is usually the first diagnostic:
+>
+> <div align="center"><img src="dashboard_offline.png" alt="dashboard showing the OFFLINE border and per-section errors" width="420"></div>
+
 **Setup network never appears** — once configured, the firmware boots straight
 to the dashboard. Tap <kbd>RST</kbd>, then hold <kbd>BOOT</kbd> ~2 s to force
 the portal back open.

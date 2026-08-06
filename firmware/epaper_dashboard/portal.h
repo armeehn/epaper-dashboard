@@ -11,6 +11,10 @@ void portalRun(PortalReason reason);
 // (registered by the sketch, which owns the display).
 void portalSetPreviewHook(void (*fn)());
 
+// Tell the portal the panel's resolution (for the layout editor's canvas
+// aspect and the /api/state report). Call once before running the portal.
+void portalSetPanelInfo(uint16_t w, uint16_t h);
+
 // LAN editor window: serve the same portal UI over the EXISTING home-WiFi
 // connection (no AP, no captive DNS) until idleMs pass without a request
 // (hard cap maxMs). Used after a manual-reset refresh so the layout/blocks

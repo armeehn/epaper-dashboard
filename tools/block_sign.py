@@ -53,8 +53,14 @@ def cmd_verify(pub, epbfile):
     pubkey = serialization.load_pem_public_key(pathlib.Path(pub).read_bytes())
     digest = hashes.Hash(hashes.SHA256()); digest.update(payload)
     pubkey.verify(sig, digest.finalize(), ec.ECDSA(Prehashed(hashes.SHA256())))
+    body = json.loads(payload)
+    # a payload is either a single block descriptor or a registry index
+    if body.get("format") == "epb-index1":
+        what = f"index of {len(body.get('blocks', []))} blocks"
+    else:
+        what = body.get("id", "unknown block")
     print(f"OK: valid signature by keyid={epb['sigs'][0]['keyid']}, "
-          f"payload {len(payload)} bytes ({json.loads(payload)['id']})")
+          f"payload {len(payload)} bytes ({what})")
 
 def cmd_index(key, keyid, baseurl, *dirs):
     priv = load_priv(key)

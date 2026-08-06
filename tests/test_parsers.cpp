@@ -84,6 +84,15 @@ static void testNetUtil() {
   String xs = "a&amp;b&lt;c&#13;&gt;";
   xmlUnescape(xs);
   CHECK_STR(xs.c_str(), "a&b<c>", "xmlUnescape");
+
+  // OTA digest gate
+  const uint8_t dg[4] = {0xde, 0xad, 0xbe, 0xef};
+  CHECK(hexDigestMatches("", dg, 4), "empty expected passes (optional check)");
+  CHECK(hexDigestMatches("deadbeef", dg, 4), "hex match lowercase");
+  CHECK(hexDigestMatches("DEADBEEF", dg, 4), "hex match uppercase");
+  CHECK(!hexDigestMatches("deadbeee", dg, 4), "wrong digest refused");
+  CHECK(!hexDigestMatches("deadbe", dg, 4), "wrong length refused");
+  CHECK(!hexDigestMatches("deadbeXX", dg, 4), "non-hex refused");
 }
 
 static const char* SAMPLE_ICS =

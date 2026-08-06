@@ -11,8 +11,34 @@ concurrency:
 
 jobs:
   build-esp32:
-    name: Compile ESP32 firmware (Dev Module, Huge APP)
+    name: ${{ matrix.slug }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - panel: PANEL_75_B_V2
+            slug: 75in-800x480-3color
+            desc: 'Waveshare 7.5" (B) V2/V3 — 800x480, black/white/red (default)'
+          - panel: PANEL_75_BW_V2
+            slug: 75in-800x480-bw
+            desc: 'Waveshare 7.5" V2 — 800x480, black/white'
+          - panel: PANEL_75_HD_B
+            slug: 75in-880x528-3color
+            desc: 'Waveshare 7.5" HD (B) — 880x528, black/white/red'
+          - panel: PANEL_583_B_V2
+            slug: 583in-648x480-3color
+            desc: 'Waveshare 5.83" (B) V2 — 648x480, black/white/red'
+          - panel: PANEL_583_BW_V2
+            slug: 583in-648x480-bw
+            desc: 'Waveshare 5.83" V2 — 648x480, black/white'
+          - panel: PANEL_75_B_V1
+            slug: 75in-640x384-3color
+            desc: 'Waveshare 7.5" (B) V1 — 640x384, black/white/red (discontinued)'
+          - panel: PANEL_75_BW_V1
+            slug: 75in-640x384-bw
+            desc: 'Waveshare 7.5" V1 — 640x384, black/white'
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +48,7 @@ jobs:
           path: |
             ~/.arduino15
             ~/Arduino/libraries
-          key: arduino-esp32-${{ runner.os }}-v1
+          key: arduino-esp32-${{ runner.os }}-v2
 
       - name: Install arduino-cli
         uses: arduino/setup-arduino-cli@v2
@@ -34,63 +60,93 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp32:esp32
           arduino-cli lib install GxEPD2 ArduinoJson
-          arduino-cli version >> "$GITHUB_STEP_SUMMARY"
-          arduino-cli core list | grep esp32 >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Compile sketch
+      - name: Compile sketch (${{ matrix.panel }})
         run: |
+          # min_spiffs = two OTA app slots; huge_app has only one and cannot
+          # take over-the-air updates. Keep in sync with platformio.ini.
           arduino-cli compile \
-            --fqbn "esp32:esp32:esp32:PartitionScheme=huge_app" \
+            --fqbn "esp32:esp32:esp32:PartitionScheme=min_spiffs" \
+            --build-property "compiler.cpp.extra_flags=-D${{ matrix.panel }}" \
             --export-binaries \
             firmware/epaper_dashboard 2>&1 | tee build.log
-          echo '### Firmware size' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "Sketch uses|Global variables" build.log >> "$GITHUB_STEP_SUMMARY" || true
+          {
+            echo "### ${{ matrix.slug }}"
+            echo '```'
+            grep -E "Sketch uses|Global variables" build.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build single flashable image
+      - name: Assemble flashable images
         run: |
           pip install --quiet esptool==4.8.1
           B=firmware/epaper_dashboard/build/esp32.esp32.esp32
+          SLUG=${{ matrix.slug }}
+          OUT=dist
+          mkdir -p "$OUT"
+
           BOOT_APP0=$(find ~/.arduino15/packages/esp32 -name boot_app0.bin | head -1)
           test -n "$BOOT_APP0" || { echo "boot_app0.bin not found in ESP32 core"; exit 1; }
-          python3 -m esptool --chip esp32 merge_bin -o epaper-dashboard-factory.bin \
+
+          python3 -m esptool --chip esp32 merge_bin -o "$OUT/epaper-dashboard-$SLUG-factory.bin" \
             0x1000  "$B/epaper_dashboard.ino.bootloader.bin" \
             0x8000  "$B/epaper_dashboard.ino.partitions.bin" \
             0xe000  "$BOOT_APP0" \
             0x10000 "$B/epaper_dashboard.ino.bin"
-          cp "$B/epaper_dashboard.ino.bin" epaper-dashboard-app.bin
-          {
-            echo "FLASHING (no Arduino IDE needed)"
-            echo
-            echo "Full image - fresh install (wipes settings; setup portal reopens):"
-            echo "  pip install esptool==4.8.1"
-            echo "  python3 -m esptool --chip esp32 --port <PORT> --baud 921600 \\"
-            echo "      write_flash 0x0 epaper-dashboard-factory.bin"
-            echo
-            echo "App only - firmware update (KEEPS WiFi/settings/blocks/layout):"
-            echo "  python3 -m esptool --chip esp32 --port <PORT> --baud 921600 \\"
-            echo "      write_flash 0x10000 epaper-dashboard-app.bin"
-            echo
-            echo "Zero-install option: flash epaper-dashboard-factory.bin at offset 0x0"
-            echo "with a browser flasher (Chrome/Edge + WebSerial), e.g."
-            echo "https://espressif.github.io/esptool-js/"
-            echo
-            echo "<PORT> examples: /dev/ttyUSB0 (Linux), /dev/cu.usbserial-XXXX (macOS), COM5 (Windows)"
-          } > FLASHING.txt
+
+          cp "$B/epaper_dashboard.ino.bin"            "$OUT/epaper-dashboard-$SLUG-app.bin"
+          cp "$B/epaper_dashboard.ino.partitions.bin" "$OUT/epaper-dashboard-partitions.bin"
+          cp "$BOOT_APP0"                             "$OUT/boot_app0.bin"
+
+          ( cd "$OUT" && sha256sum \
+              "epaper-dashboard-$SLUG-factory.bin" \
+              "epaper-dashboard-$SLUG-app.bin" \
+              epaper-dashboard-partitions.bin boot_app0.bin \
+              > "sha256sums-$SLUG.txt" )
+
+          cat > "$OUT/FLASHING-$SLUG.txt" <<EOF
+          e-paper dashboard — ${{ matrix.desc }}
+          Built from ${GITHUB_SHA} with the OTA-capable (min_spiffs) partition table.
+
+          FRESH INSTALL (wipes settings; the setup portal reopens)
+            pip install esptool==4.8.1
+            python3 -m esptool --chip esp32 --port <PORT> --baud 921600 \\
+                write_flash 0x0 epaper-dashboard-$SLUG-factory.bin
+
+            Zero-install alternative: flash the same factory image at offset 0x0
+            with a WebSerial flasher in Chrome/Edge, e.g.
+            https://espressif.github.io/esptool-js/
+
+          UPDATE OVER THE AIR (keeps WiFi, settings, layout and blocks)
+            Tap RST, open http://epaper-dashboard.local/ during the editor
+            window, go to the Update tab, pick:
+                epaper-dashboard-$SLUG-app.bin
+            and optionally paste its line from sha256sums-$SLUG.txt.
+
+          UPDATE OVER USB (OTA-table devices)
+            python3 -m esptool --chip esp32 --port <PORT> --baud 921600 \\
+                write_flash 0xe000 boot_app0.bin \\
+                            0x10000 epaper-dashboard-$SLUG-app.bin
+
+          MIGRATING from a pre-OTA (Huge APP) install — one last USB flash.
+          Keeps WiFi and wizard settings; saved layout and installed blocks
+          reset once, because the data partition moves.
+            python3 -m esptool --chip esp32 --port <PORT> --baud 921600 \\
+                write_flash 0x8000 epaper-dashboard-partitions.bin \\
+                            0xe000 boot_app0.bin \\
+                            0x10000 epaper-dashboard-$SLUG-app.bin
+
+          <PORT>: /dev/ttyUSB0 (Linux), /dev/cu.usbserial-XXXX (macOS), COM5 (Windows)
+          EOF
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: epaper-dashboard-firmware-${{ github.sha }}
-          path: |
-            epaper-dashboard-factory.bin
-            epaper-dashboard-app.bin
-            FLASHING.txt
+          name: epaper-dashboard-${{ matrix.slug }}
+          path: dist/
 
       - name: Attach binaries to release (version tags)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            epaper-dashboard-factory.bin
-            epaper-dashboard-app.bin
-            FLASHING.txt
+          files: dist/*

@@ -15,10 +15,10 @@ struct TrustedKey {
 };
 
 static const TrustedKey TRUSTED_KEYS[] = {
-  { "demo-registry-2026",
+  { "my-registry",
     "-----BEGIN PUBLIC KEY-----\n"
-    "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAER8xmgvN5B5ks7KOuVKE5mzsWQRCl\n"
-    "S+tiEQm4uErNRYJnN01g20dHHfqHRj6dl6q9ooKTc32zBxtBVheFQ3XFpg==\n"
+    "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEu/tMflolZjRwz5IabE714wA3xlVo\n"
+    "hKNz02/Ng80semfejzaQRyjKqKpfDD8gsHOpug02CNKv7dJUNXJoevV/rQ==\n"
     "-----END PUBLIC KEY-----\n" },
   { nullptr, nullptr }   // terminator
 };

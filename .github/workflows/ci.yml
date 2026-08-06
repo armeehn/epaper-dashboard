@@ -13,5 +13,9 @@ jobs:
         with:
           path: tests/host/.deps
           key: hostdeps-${{ runner.os }}-v1
+      # mbedTLS generates its PSA driver wrappers at build time and imports
+      # jsonschema to do it; without this the first (cold-cache) run fails.
+      - name: Install mbedTLS build prerequisites
+        run: pip install --quiet jsonschema
       - name: Run full host verification
         run: bash tests/host/run_tests.sh

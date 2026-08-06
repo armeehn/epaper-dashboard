@@ -5,7 +5,8 @@
 #   3. runs the unit-test suite, including a real ECDSA P-256 signature
 #      round-trip through mbedTLS
 # Dependencies are cloned into tests/host/.deps on first run (git + g++ +
-# python3 required). This is exactly what CI runs.
+# python3 required; mbedTLS's build-time codegen also imports jsonschema —
+# `pip install jsonschema`). This is exactly what CI runs.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DEPS="$ROOT/tests/host/.deps"
@@ -44,6 +45,14 @@ $CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ "$FW/epaper_dashboard.ino" -o
 echo "== Arduino IDE prototype-hoist emulation =="
 python3 "$ROOT/tools/arduino_proto_check.py" "$FW/epaper_dashboard.ino" "$BUILD/ino_ard.cpp" >/dev/null
 $CXX -w -I "$FW" -I "$ROOT/tests/host/mockepd" -c "$BUILD/ino_ard.cpp" -o "$BUILD/ino_ard.o"
+
+echo "== panel variants (b/w + other sizes compile against real GxEPD2) =="
+$CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_75_BW_V2 \
+  "$FW/epaper_dashboard.ino" -o "$BUILD/ino_bw.o"
+$CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_583_B_V2 \
+  "$FW/epaper_dashboard.ino" -o "$BUILD/ino_583.o"
+$CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_75_BW_V1 -DBOARD_GENERIC_ESP32 \
+  "$FW/epaper_dashboard.ino" -o "$BUILD/ino_bw_v1.o"
 
 echo "== unit tests (incl. real mbedTLS signature verification) =="
 $CXX -Wall -Wno-unused-parameter -o "$BUILD/test_parsers" "$ROOT/tests/test_parsers.cpp" \
