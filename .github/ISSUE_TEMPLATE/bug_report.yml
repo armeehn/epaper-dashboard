@@ -1,0 +1,48 @@
+name: Bug report
+description: Something misbehaves on your device or in the portal
+labels: [bug]
+body:
+  - type: dropdown
+    id: panel
+    attributes:
+      label: Panel
+      options:
+        - 7.5" (B) V2/V3 800x480 3-color (PANEL_75_B_V2)
+        - 7.5" V2 800x480 b/w (PANEL_75_BW_V2)
+        - 5.83" (B) V2 648x480 3-color (PANEL_583_B_V2)
+        - other preset
+        - PANEL_CUSTOM (say which driver below)
+    validations:
+      required: true
+  - type: dropdown
+    id: board
+    attributes:
+      label: Board / wiring
+      options:
+        - Waveshare e-Paper ESP32 Driver Board
+        - Generic ESP32 dev board + HAT/adapter (BOARD_GENERIC_ESP32)
+        - Custom wiring (BOARD_CUSTOM)
+        - ESP32-S2 / S3 / C3 / C6
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      description: Shown in the dashboard footer and the Update tab.
+      placeholder: "3.2"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: serial
+    attributes:
+      label: Serial log
+      description: |
+        Open the Serial Monitor at 115200, tap RST, and paste the output —
+        the firmware prints every stage with heap numbers, which usually
+        pinpoints the failure. Remove anything private.
+      render: text

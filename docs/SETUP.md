@@ -1,0 +1,85 @@
+# Setup & everyday use
+
+## The turn-key flow
+
+1. **Flash the firmware** (once — [docs/FLASHING.md](FLASHING.md)).
+2. The panel shows a welcome screen: *join the WiFi network
+   `EPaper-Dashboard`, then open `http://192.168.4.1`*. On phones the page
+   usually pops up by itself (captive portal).
+3. **Answer the wizard's questions.** It walks WiFi → email → calendar →
+   weather → clock & refresh, and **tests every step live on the device**: it
+   scans and joins your WiFi (staying reachable through its own hotspot), logs
+   into IMAP and shows your newest matching message, discovers and lists your
+   CalDAV calendars to pick from, geocodes your city, and suggests a timezone.
+   Errors appear right there, in plain language.
+4. **Save & start** — the device reboots and draws the first dashboard within
+   about a minute.
+
+## Buttons
+
+| Gesture | Effect |
+| --- | --- |
+| tap <kbd>RST</kbd> | refresh now, then keep the **editor window** open on your LAN for a few minutes (layout, blocks, preview, OTA — with your real data) |
+| tap <kbd>RST</kbd>, then press & hold <kbd>BOOT</kbd> ~2 s | reopen the full **setup portal** (own hotspot, existing values pre-filled; passwords never echo back) |
+
+> [!CAUTION]
+> Order matters. Holding <kbd>BOOT</kbd> *while* <kbd>RST</kbd> is released puts
+> the ESP32 into its ROM flashing mode — the chip sits silent until the next
+> plain reset. If the board seems dead, just tap <kbd>RST</kbd> alone.
+
+The portal also reopens automatically after 5 consecutive failed WiFi cycles,
+so a changed router password can't strand the display.
+
+## Email providers
+
+The wizard has presets that fill in every server detail:
+
+| Provider | IMAP | Password | CalDAV |
+| --- | --- | --- | --- |
+| **Migadu** | `imap.migadu.com` | normal mailbox password | `cdav.migadu.com` — "Find my calendars" lists yours |
+| **Fastmail** | `imap.fastmail.com` | app password (Settings → Privacy & Security) | `caldav.fastmail.com` |
+| **Gmail** | `imap.gmail.com` | app password (2-Step Verification required) | use the ICS "secret address" instead |
+| **iCloud Mail** | `imap.mail.me.com` | app-specific password (appleid.apple.com) | `caldav.icloud.com` |
+| **mailbox.org** | `imap.mailbox.org` | normal password (app password with 2FA) | `dav.mailbox.org` |
+| **Other / custom** | any standard IMAP server | — | any SabreDAV / Radicale / Baïkal / Nextcloud server, or an ICS link |
+
+> [!NOTE]
+> **Outlook.com / Hotmail can't work**: Microsoft has switched personal
+> accounts to OAuth-only and removed app passwords for IMAP, which a
+> standalone device can't use. Point the calendar at a published ICS link if
+> you need Outlook events; use any other provider for mail.
+
+Self-hosted works naturally — Dovecot for mail, Radicale/Baïkal/Nextcloud for
+CalDAV — since the device speaks the plain protocols with no vendor APIs.
+
+## Everyday behavior
+
+- **Refresh cadence** — aligned to wall-clock boundaries (:00/:05/…), minimum
+  3 minutes. Tri-color panels flash for ~20–30 s per refresh; b/w for ~2–5 s.
+  The clock shows the time as of the refresh.
+- **Quiet hours** — overnight the display pauses (configurable); e-paper holds
+  its image with zero power, and refreshes resume in the morning.
+- **Offline resilience** — last-good data is cached in RTC memory across deep
+  sleep. Network hiccups show a red OFFLINE border and per-section error
+  messages instead of a blank panel; repeated crashes degrade gracefully
+  (skip heaviest fetches first) rather than freezing the screen.
+- **Recurring events** — the CalDAV server is asked to expand recurrences;
+  if it can't, the device expands DAILY/WEEKLY rules itself (INTERVAL, BYDAY,
+  COUNT, UNTIL, EXDATE, moved occurrences). MONTHLY/YEARLY fall back to the
+  master date — a deliberate limitation.
+- **Networking** — on your LAN the device is a plain DHCP client (current
+  lease shown in the dashboard footer — handy for a DHCP reservation, and
+  it registers `epaper-dashboard.local` via mDNS). The setup hotspot lives on
+  its own 192.168.4.0/24 subnet so AP+STA routing can't collide mid-wizard
+  (`PORTAL_AP_IP*` in `config.h` changes it if your LAN uses that range).
+
+## Security model
+
+The setup hotspot is open by default and only exists during setup — set
+`PORTAL_AP_PASS` in `config.h` to protect it. TLS connections skip certificate
+validation (no CA store management on a microcontroller) — fine for a home
+dashboard, worth knowing. Credentials sit unencrypted in NVS flash, as is
+normal for ESP32 projects; physical USB access can read them. The LAN editor
+window (including OTA upload) trusts your LAN while it's open — on a shared
+network, shorten the window or use the password-protected settings portal
+instead. Full block-system threat model: [DESIGN.md](../DESIGN.md).

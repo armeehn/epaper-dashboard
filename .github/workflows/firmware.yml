@@ -1,0 +1,96 @@
+name: firmware
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-esp32:
+    name: Compile ESP32 firmware (Dev Module, Huge APP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Arduino core & libraries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-esp32-${{ runner.os }}-v1
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 core + libraries
+        run: |
+          arduino-cli config init --overwrite \
+            --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli lib install GxEPD2 ArduinoJson
+          arduino-cli version >> "$GITHUB_STEP_SUMMARY"
+          arduino-cli core list | grep esp32 >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compile sketch
+        run: |
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32:PartitionScheme=huge_app" \
+            --export-binaries \
+            firmware/epaper_dashboard 2>&1 | tee build.log
+          echo '### Firmware size' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "Sketch uses|Global variables" build.log >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Build single flashable image
+        run: |
+          pip install --quiet esptool==4.8.1
+          B=firmware/epaper_dashboard/build/esp32.esp32.esp32
+          BOOT_APP0=$(find ~/.arduino15/packages/esp32 -name boot_app0.bin | head -1)
+          test -n "$BOOT_APP0" || { echo "boot_app0.bin not found in ESP32 core"; exit 1; }
+          python3 -m esptool --chip esp32 merge_bin -o epaper-dashboard-factory.bin \
+            0x1000  "$B/epaper_dashboard.ino.bootloader.bin" \
+            0x8000  "$B/epaper_dashboard.ino.partitions.bin" \
+            0xe000  "$BOOT_APP0" \
+            0x10000 "$B/epaper_dashboard.ino.bin"
+          cp "$B/epaper_dashboard.ino.bin" epaper-dashboard-app.bin
+          {
+            echo "FLASHING (no Arduino IDE needed)"
+            echo
+            echo "Full image - fresh install (wipes settings; setup portal reopens):"
+            echo "  pip install esptool==4.8.1"
+            echo "  python3 -m esptool --chip esp32 --port <PORT> --baud 921600 \\"
+            echo "      write_flash 0x0 epaper-dashboard-factory.bin"
+            echo
+            echo "App only - firmware update (KEEPS WiFi/settings/blocks/layout):"
+            echo "  python3 -m esptool --chip esp32 --port <PORT> --baud 921600 \\"
+            echo "      write_flash 0x10000 epaper-dashboard-app.bin"
+            echo
+            echo "Zero-install option: flash epaper-dashboard-factory.bin at offset 0x0"
+            echo "with a browser flasher (Chrome/Edge + WebSerial), e.g."
+            echo "https://espressif.github.io/esptool-js/"
+            echo
+            echo "<PORT> examples: /dev/ttyUSB0 (Linux), /dev/cu.usbserial-XXXX (macOS), COM5 (Windows)"
+          } > FLASHING.txt
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: epaper-dashboard-firmware-${{ github.sha }}
+          path: |
+            epaper-dashboard-factory.bin
+            epaper-dashboard-app.bin
+            FLASHING.txt
+
+      - name: Attach binaries to release (version tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            epaper-dashboard-factory.bin
+            epaper-dashboard-app.bin
+            FLASHING.txt

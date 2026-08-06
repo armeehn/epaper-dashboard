@@ -1,0 +1,16 @@
+# host verification workspace (cloned deps + objects)
+tests/host/.deps/
+tests/host/.build/
+
+# build & scratch artifacts
+*.o
+*.ppm
+__pycache__/
+.pio/
+node_modules/
+.DS_Store
+
+# real signing keys never belong in git.
+# the demo key is the documented, intentionally-public exception.
+registry/keys/*.key
+!registry/keys/demo-registry.key
