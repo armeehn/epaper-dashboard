@@ -24,7 +24,7 @@ struct Settings {
   // weather
   float lat = 0, lon = 0;
   char place[40] = "";
-  char unitT[2] = "f";          // f | c
+  char unitT[2] = "c";          // c | f
   char unitW[4] = "mph";        // mph | kmh
   // clock
   bool h24 = false;

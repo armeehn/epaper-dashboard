@@ -48,7 +48,7 @@ bool settingsApplyJson(JsonDocument& doc) {
   s.lat = x["lat"] | 0.0f;
   s.lon = x["lon"] | 0.0f;
   cpy(s.place, sizeof(s.place), x["place"], "");
-  cpy(s.unitT, sizeof(s.unitT), x["unitT"], "f");
+  cpy(s.unitT, sizeof(s.unitT), x["unitT"], "c");
   cpy(s.unitW, sizeof(s.unitW), x["unitW"], "mph");
 
   JsonObject k = doc["clock"];

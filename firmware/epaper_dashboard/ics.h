@@ -23,9 +23,12 @@ struct VEvent {
 
 // Incremental parser: feed characters (or lines); collects VEVENTs that could
 // intersect [winStart, winEnd] (recurring masters are always kept).
+// NOTE: collected events live in shared static storage (attached by begin()),
+// NOT inside this object — ~6 KB of VEvents on the caller's stack would
+// overflow the ESP32 Arduino loop task's 8 KB stack. One parser at a time.
 class IcsParser {
  public:
-  VEvent events[ICS_MAX_RAW];
+  VEvent* events = nullptr;   // -> static storage, valid after begin()
   int n = 0;
   bool overflow = false;      // more events matched than we could keep
   long veventCount = 0;

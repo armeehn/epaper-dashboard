@@ -18,14 +18,15 @@ static void fillSampleData() {
   g_now = 1784738700;
   localtime_r(&g_now, &g_tm);
 
-  // weather
+  // weather (Celsius — the default unit)
+  strcpy(g_set.unitT, "c");
   g_haveWx = 1;
-  g_wx.temp = 78; g_wx.feels = 79; g_wx.hum = 52; g_wx.wind = 6;
+  g_wx.temp = 26; g_wx.feels = 27; g_wx.hum = 52; g_wx.wind = 6;
   g_wx.code = 2; g_wx.isDay = 1;
   strcpy(g_wx.cond, "Partly cloudy");
-  strcpy(g_wx.d[0].dow, "Today"); g_wx.d[0].hi = 84; g_wx.d[0].lo = 64; g_wx.d[0].code = 1;  g_wx.d[0].pop = 0;
-  strcpy(g_wx.d[1].dow, "Thu");   g_wx.d[1].hi = 81; g_wx.d[1].lo = 63; g_wx.d[1].code = 2;  g_wx.d[1].pop = 10;
-  strcpy(g_wx.d[2].dow, "Fri");   g_wx.d[2].hi = 77; g_wx.d[2].lo = 61; g_wx.d[2].code = 61; g_wx.d[2].pop = 55;
+  strcpy(g_wx.d[0].dow, "Today"); g_wx.d[0].hi = 29; g_wx.d[0].lo = 18; g_wx.d[0].code = 1;  g_wx.d[0].pop = 0;
+  strcpy(g_wx.d[1].dow, "Thu");   g_wx.d[1].hi = 27; g_wx.d[1].lo = 17; g_wx.d[1].code = 2;  g_wx.d[1].pop = 10;
+  strcpy(g_wx.d[2].dow, "Fri");   g_wx.d[2].hi = 25; g_wx.d[2].lo = 16; g_wx.d[2].code = 61; g_wx.d[2].pop = 55;
 
   // calendar (ts values precomputed for PDT)
   g_haveCal = 1;

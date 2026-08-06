@@ -35,11 +35,14 @@ a red OFFLINE flag with per-section error messages instead of a blank panel.
 4. **Save & start** — the device reboots and draws the first dashboard within
    about a minute.
 
-To change settings later: hold **BOOT**, tap **RST**, release — the setup
-network comes back with your existing values pre-filled (passwords are kept
-server-side on the device and never echoed to the browser). The portal also
-reopens automatically after 5 consecutive failed WiFi cycles, so a changed
-router password can't strand the display.
+To change settings later: **tap RST, then immediately press & hold BOOT for
+~2 seconds** — the setup network comes back with your existing values
+pre-filled (passwords are kept on the device and never echoed to the
+browser). Order matters: holding BOOT *while* RST is released puts the ESP32
+into its ROM flashing mode instead (the chip sits silent until the next plain
+reset — if that happens, just tap RST alone). The portal also reopens
+automatically after 5 consecutive failed WiFi cycles, so a changed router
+password can't strand the display.
 
 ### Migadu specifics
 
@@ -84,10 +87,12 @@ firmware/epaper_dashboard/
     settings.cpp/.h         runtime config in NVS flash
     net_util.cpp/.h         encodings, timestamps, URL helpers
     config.h                pins / panel / portal name (compile-time only)
-    ClockFont.h, TempFont.h generated Poppins-Bold digit fonts
+    ClockFont.h, TempFont.h generated DejaVu Serif Bold digit fonts
 web/                        wizard source (index.html, app.js, bootstrap css)
 tools/make_assets.py        regenerate portal_assets.h after editing web/
 tools/make_gfx_font.py      regenerate the clock fonts
+tools/arduino_proto_check.py emulates the IDE's prototype-hoisting to catch
+                            "does not name a type" errors before flashing
 tests/test_parsers.cpp      host unit tests (73 checks) for all parsers
 ```
 
@@ -124,7 +129,17 @@ could read them.
 ## Troubleshooting
 
 **Setup network never appears** — the firmware boots straight to the dashboard
-once configured; hold BOOT while tapping RST to force the portal.
+once configured; tap RST, then hold BOOT for ~2 s to force the portal.
+
+**Screen frozen / device seems dead or won't reset** — first, tap RST *alone*
+(if BOOT was held during a reset the chip is sitting in its flashing mode and
+a plain reset exits it). If the screen still never refreshes, open the Arduino
+Serial Monitor at 115200 and tap RST: the firmware prints every stage (wifi,
+mail, calendar, weather, render) with free-heap numbers, and any crash prints
+a backtrace — the last line before it tells you which stage failed. The
+firmware also self-heals: if a cycle dies twice in a row it skips the calendar
+fetch (the heaviest step) and flags it on-screen; after four it skips all
+fetches and still draws the clock, so the display always comes back.
 
 **Wizard page stalls right after joining WiFi** — expected for ~10 s: the
 ESP32's hotspot hops to your router's channel. Stay on the setup WiFi; the page

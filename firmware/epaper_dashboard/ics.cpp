@@ -5,7 +5,11 @@
 
 // ---------------- parser ----------------
 
+// Shared raw-event storage (.bss, not stack): see note in ics.h.
+static VEvent s_rawStore[ICS_MAX_RAW];
+
 void IcsParser::begin(time_t winStart, time_t winEnd) {
+  events = s_rawStore;
   ws_ = winStart;
   we_ = winEnd;
   n = 0;

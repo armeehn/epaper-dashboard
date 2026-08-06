@@ -54,5 +54,3 @@ typedef struct {
   WeatherT wx;
   char msg[96];
 } WxResult;
-
-enum IconKind { IC_SUN, IC_PART, IC_CLOUD, IC_FOG, IC_RAIN, IC_SNOW, IC_STORM };

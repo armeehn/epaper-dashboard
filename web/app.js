@@ -393,7 +393,7 @@ function prefill(c) {
       state.wx = { name: c.wx.place, lat: c.wx.lat, lon: c.wx.lon, admin1: '', country: '', tz: '' };
       $('wx-picked').classList.remove('step-hidden');
       $('wx-picked').textContent = `Weather location: ${c.wx.place} (${c.wx.lat}, ${c.wx.lon})`;
-      $('wx-unitT').value = c.wx.unitT || 'f'; $('wx-unitW').value = c.wx.unitW || 'mph';
+      $('wx-unitT').value = c.wx.unitT || 'c'; $('wx-unitW').value = c.wx.unitW || 'mph';
     }
     if (c.clock) { $('ck-h24').value = c.clock.h24 ? '1' : '0'; if (c.clock.tzname) preselectTz(c.clock.tzname); }
     if (c.refresh) {

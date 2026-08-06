@@ -6,10 +6,10 @@ rows concatenated with no per-row padding. yOffset = 1 - bitmap_top.
 import sys
 import freetype
 
-FONT_PATH = "/usr/share/fonts/truetype/google-fonts/Poppins-Bold.ttf"
-PIXEL_SIZE = 120           # EM pixel size (cap height ~0.70em -> ~84 px digits)
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
+PIXEL_SIZE = 105           # EM pixel size (cap height ~0.70em -> ~84 px digits)
 FIRST, LAST = 0x30, 0x3A   # '0'..'9' and ':'
-NAME = "PoppinsBoldClock"
+NAME = "DashClockFont"
 
 face = freetype.Face(FONT_PATH)
 face.set_pixel_sizes(0, PIXEL_SIZE)

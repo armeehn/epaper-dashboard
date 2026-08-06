@@ -119,7 +119,7 @@ struct DavResponse {
 
 static bool davRequest(const char* method, String url, const String& user,
                        const String& pass, const char* depth, const String& body,
-                       DavResponse& out, int maxBody = 40000) {
+                       DavResponse& out, int maxBody = 28000) {
   const char* hdrKeys[] = {"Location"};
   for (int hop = 0; hop < 3; hop++) {
     WiFiClientSecure cli;
@@ -276,9 +276,9 @@ static String reportBody(time_t ws, time_t we, bool expand) {
   return b;
 }
 
-// pull VEVENT blocks out of a (possibly XML-escaped) REPORT body
-static void parseReportIcs(const String& bodyRaw, IcsParser& parser) {
-  String body = bodyRaw;
+// pull VEVENT blocks out of a (possibly XML-escaped) REPORT body.
+// Mutates the body in place — avoids a second 25 KB+ copy on the heap.
+static void parseReportIcs(String& body, IcsParser& parser) {
   xmlUnescape(body);
   int pos = 0;
   while (true) {

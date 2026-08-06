@@ -25,6 +25,7 @@
 #include <WiFi.h>
 #include <time.h>
 #include <sys/time.h>
+#include <esp_system.h>   // esp_reset_reason()
 
 #include <GxEPD2_3C.h>
 #include <Fonts/FreeSans9pt7b.h>
@@ -32,9 +33,8 @@
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
 #include <Fonts/FreeSansBold18pt7b.h>
-#include "ClockFont.h"   // Poppins Bold digits, ~90 px (generated)
-#include "TempFont.h"    // Poppins Bold digits, ~55 px (generated)
-
+#include "ClockFont.h"   // DejaVu Serif Bold digits (generated)
+#include "TempFont.h"    // DejaVu Serif Bold digits (generated)
 
 // ---------------- display ----------------
 #if defined(PANEL_75_B_V2)
@@ -65,11 +65,26 @@ RTC_DATA_ATTR uint32_t g_bootCount = 0;
 RTC_DATA_ATTR uint8_t  g_wifiFails = 0;
 RTC_DATA_ATTR char     g_lastIp[16] = "";   // DHCP lease from the router
 
+// Crash-loop guard: g_phase marks where the cycle is (1 = fetching,
+// 2 = rendering, 0 = completed). If a boot starts and the previous phase
+// never reached 0, that cycle died mid-way — count it and degrade instead
+// of crash-looping with a frozen screen.
+RTC_DATA_ATTR uint8_t g_phase = 0;
+RTC_DATA_ATTR uint8_t g_fetchCrashes = 0;
+RTC_DATA_ATTR uint8_t g_renderCrashes = 0;
+static bool s_skipCal = false, s_skipAll = false;
+
 // this-cycle status
 static bool s_mailOk, s_calOk, s_wxOk, s_wifiOk;
 static char s_mailErr[96], s_calErr[96];
 static time_t g_now;
 static struct tm g_tm;
+
+// Weather icon kinds. MUST stay above the first function definition: the
+// Arduino IDE auto-generates function prototypes and hoists them to just
+// above the first function, so iconForCode()'s prototype (which returns
+// IconKind) needs this enum declared before that point.
+enum IconKind { IC_SUN, IC_PART, IC_CLOUD, IC_FOG, IC_RAIN, IC_SNOW, IC_STORM };
 
 // ---------------- small draw helpers ----------------
 static uint16_t textWidth(const String& s) {
@@ -106,7 +121,6 @@ static void thickHLine(int16_t x, int16_t y, int16_t w, int16_t t, uint16_t colo
 }
 
 // ---------------- weather icons ----------------
-
 static IconKind iconForCode(int code) {
   if (code == 0 || code == 1) return IC_SUN;
   if (code == 2)              return IC_PART;
@@ -241,7 +255,7 @@ static String fmtClock(const struct tm& t, bool withAmPm) {
 
 // ---------------- dashboard sections ----------------
 static void drawTopBand(int16_t W, int16_t bandH) {
-  display.setFont(&PoppinsBoldClock);
+  display.setFont(&DashClockFont);
   String timeStr = fmtClock(g_tm, false);
   int16_t x1, y1; uint16_t tw, th;
   display.getTextBounds(timeStr, 0, 0, &x1, &y1, &tw, &th);
@@ -285,7 +299,7 @@ static void drawWeather(int16_t leftW, int16_t bandH, int16_t H) {
 
   char tbuf[8];
   snprintf(tbuf, sizeof(tbuf), "%d", g_wx.temp);
-  display.setFont(&PoppinsBoldTemp);
+  display.setFont(&DashTempFont);
   int16_t x1, y1; uint16_t tw, th;
   display.getTextBounds(tbuf, 0, 0, &x1, &y1, &tw, &th);
   int16_t tempX = x0 + 108, tempBase = bandH + 92;
@@ -414,14 +428,25 @@ static void drawInbox(int16_t rx, int16_t W, int16_t sectY, int16_t H) {
   }
 }
 
-static void drawStatusLine(int16_t H) {
+static void drawStatusLine(int16_t leftW, int16_t H) {
+  // Lives entirely inside the weather column so it never crowds the
+  // calendar/inbox column. Optional segments are dropped if space runs out.
   display.setFont(nullptr);   // classic 6x8 font (cursor = top-left)
   String line = "";
-  if (g_set.imUser[0]) line += String("mail ") + (s_mailOk ? "ok" : "FAIL") + "  ";
-  if (strcmp(g_set.calMode, "none") != 0) line += String("cal ") + (s_calOk ? "ok" : "FAIL") + "  ";
+  if (g_set.imUser[0]) line += String("mail ") + (s_mailOk ? "ok" : "FAIL");
+  if (strcmp(g_set.calMode, "none") != 0) {
+    if (line.length()) line += " | ";
+    line += String("cal ") + (s_calOk ? "ok" : "FAIL");
+  }
+  if (line.length()) line += " | ";
   line += String("wx ") + (s_wxOk ? "ok" : "FAIL");
-  if (g_lastIp[0]) line += String("  |  ip ") + g_lastIp;
-  line += "  |  every " + String(g_set.refreshMin) + "m  |  #" + String(g_bootCount);
+
+  int16_t maxW = leftW - 26;
+  String ipSeg = g_lastIp[0] ? String(" | ") + g_lastIp : String("");
+  String bootSeg = String(" | #") + String(g_bootCount);
+  if (textWidth(line + ipSeg + bootSeg) <= (uint16_t)maxW) line += ipSeg + bootSeg;
+  else if (textWidth(line + ipSeg) <= (uint16_t)maxW) line += ipSeg;
+
   bool anyFail = line.indexOf("FAIL") >= 0;
   display.setTextColor(anyFail ? GxEPD_RED : GxEPD_BLACK);
   display.setCursor(16, H - 12);
@@ -441,7 +466,7 @@ static void drawAll() {
   drawWeather(leftW, bandH, H);
   drawCalendar(rx, W, bandH, sectY);
   drawInbox(rx, W, sectY, H);
-  drawStatusLine(H);
+  drawStatusLine(leftW, H);
   if (!s_wifiOk)
     for (int i = 0; i < 3; i++) display.drawRect(i, i, W - 2 * i, H - 2 * i, GxEPD_RED);
 }
@@ -492,7 +517,7 @@ static void drawSetupScreen(PortalReason reason) {
     display.setFont(nullptr);
     display.setTextColor(GxEPD_BLACK);
     display.setCursor(16, H - 12);
-    display.print("epaper-dashboard v" FW_VERSION "  |  to reopen setup later: hold BOOT, press RST");
+    display.print("epaper-dashboard v" FW_VERSION "  |  to reopen setup later: tap RST, then hold BOOT ~2s");
   } while (display.nextPage());
   display.hibernate();
 }
@@ -523,9 +548,18 @@ static void syncTime() {
 }
 
 static void fetchAll() {
+  if (s_skipAll) {
+    s_mailOk = s_calOk = s_wxOk = false;
+    strlcpy(s_mailErr, "recovery mode - fetch skipped, see serial", sizeof(s_mailErr));
+    strlcpy(s_calErr, "recovery mode - fetch skipped, see serial", sizeof(s_calErr));
+    Serial.println("RECOVERY: skipping all fetches after repeated crashes");
+    return;
+  }
+
   // email
   s_mailOk = false;
   s_mailErr[0] = 0;
+  Serial.printf("fetch: mail (heap %u)\n", (unsigned)ESP.getFreeHeap());
   if (g_set.imUser[0]) {
     ImapResult r;
     if (imapFetch(g_set, r)) {
@@ -546,7 +580,11 @@ static void fetchAll() {
   // calendar
   s_calOk = false;
   s_calErr[0] = 0;
-  if (strcmp(g_set.calMode, "none") != 0) {
+  Serial.printf("fetch: calendar (heap %u)\n", (unsigned)ESP.getFreeHeap());
+  if (s_skipCal) {
+    strlcpy(s_calErr, "skipped after repeated crashes - see serial", sizeof(s_calErr));
+    Serial.println("RECOVERY: skipping calendar fetch");
+  } else if (strcmp(g_set.calMode, "none") != 0) {
     struct tm lt;
     time_t now = time(nullptr);
     localtime_r(&now, &lt);
@@ -569,6 +607,7 @@ static void fetchAll() {
 
   // weather
   s_wxOk = false;
+  Serial.printf("fetch: weather (heap %u)\n", (unsigned)ESP.getFreeHeap());
   WxResult w;
   if (weatherFetch(g_set, w)) {
     s_wxOk = true;
@@ -623,17 +662,47 @@ static void initDisplay() {
 }
 
 // ---------------- main ----------------
+
+// IMPORTANT: holding BOOT (GPIO0) *while* RST is released puts the ESP32
+// into its ROM serial-download mode — the sketch never runs and the device
+// looks dead until the next plain reset. So the setup gesture is:
+// tap RST first, THEN press & hold BOOT. After any non-deep-sleep reset we
+// watch the button for ~2.5 s to catch that.
+static bool setupButtonRequested() {
+  pinMode(SETUP_BUTTON_PIN, INPUT_PULLUP);
+  delay(20);
+  if (digitalRead(SETUP_BUTTON_PIN) == LOW) return true;
+  if (esp_reset_reason() == ESP_RST_DEEPSLEEP) return false;  // timer wake: quick check only
+  Serial.println("(hold BOOT within 2.5 s to open the setup portal)");
+  uint32_t t0 = millis();
+  while (millis() - t0 < 2500) {
+    if (digitalRead(SETUP_BUTTON_PIN) == LOW) return true;
+    delay(25);
+  }
+  return false;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
   g_bootCount++;
-  pinMode(SETUP_BUTTON_PIN, INPUT_PULLUP);
-  delay(30);
-  bool buttonHeld = digitalRead(SETUP_BUTTON_PIN) == LOW;
-  bool haveConfig = settingsLoad();
 
-  Serial.printf("\n== e-paper dashboard v" FW_VERSION ", boot #%lu ==\n",
-                (unsigned long)g_bootCount);
+  esp_reset_reason_t rr = esp_reset_reason();
+  Serial.printf("\n== e-paper dashboard v" FW_VERSION ", boot #%lu, reset reason %d ==\n",
+                (unsigned long)g_bootCount, (int)rr);
+
+  // crash-loop accounting: previous cycle never completed?
+  if (g_phase == 1) g_fetchCrashes++;
+  else if (g_phase == 2) g_renderCrashes++;
+  g_phase = 0;
+  if (g_fetchCrashes || g_renderCrashes)
+    Serial.printf("WARNING: incomplete cycles - fetch:%u render:%u\n",
+                  g_fetchCrashes, g_renderCrashes);
+  s_skipCal = g_fetchCrashes >= 2;
+  s_skipAll = g_fetchCrashes >= 4;
+
+  bool buttonHeld = setupButtonRequested();
+  bool haveConfig = settingsLoad();
 
   if (buttonHeld || !haveConfig || g_wifiFails >= FAILS_BEFORE_PORTAL) {
     PortalReason why = buttonHeld ? PORTAL_BUTTON
@@ -652,6 +721,7 @@ void setup() {
   if (s_wifiOk) {
     g_wifiFails = 0;
     syncTime();
+    g_phase = 1;                 // entering fetch (crash-loop tracking)
     fetchAll();
   } else {
     g_wifiFails++;
@@ -666,6 +736,8 @@ void setup() {
   g_now = time(nullptr);
   localtime_r(&g_now, &g_tm);
 
+  Serial.printf("render (heap %u)\n", (unsigned)ESP.getFreeHeap());
+  g_phase = 2;                   // entering render
   initDisplay();
   display.setFullWindow();
   display.firstPage();
@@ -674,6 +746,12 @@ void setup() {
   } while (display.nextPage());
   display.hibernate();
 
+  g_phase = 0;                   // cycle completed
+  if (!s_skipCal && !s_skipAll) {  // full cycle succeeded -> clear the guard
+    g_fetchCrashes = 0;
+    g_renderCrashes = 0;
+  }
+  Serial.println("cycle complete");
   goToSleep();
 }
 

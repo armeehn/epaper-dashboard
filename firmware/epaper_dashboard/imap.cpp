@@ -152,7 +152,13 @@ bool imapFetch(const Settings& s, ImapResult& r) {
 
   ImapConn c;
   c.cli.setInsecure();
+  // arduino-esp32 3.x changed WiFiClient::setTimeout from seconds to
+  // milliseconds; passing the wrong unit gives a 12 ms socket timeout.
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  c.cli.setTimeout(IMAP_TIMEOUT_MS);
+#else
   c.cli.setTimeout(IMAP_TIMEOUT_MS / 1000);
+#endif
   if (!c.cli.connect(s.imHost, (uint16_t)s.imPort)) {
     fail(r, "connect", (String("can't reach ") + s.imHost + ":" + s.imPort +
                         " (host/port correct? network up?)").c_str());
