@@ -1,83 +1,111 @@
 // Renders the REAL dashboard drawing code on the host into PNG-able PPMs,
-// using the mock GxEPD2 framebuffer (tools/../..: see /tmp/libs/mockepd).
-// Build via tools/build_preview.sh style command in the repo docs.
+// using the mock GxEPD2 framebuffer. Scene 4 installs real SIGNED blocks
+// through the actual verify path (mbedTLS) and renders a custom layout.
 #include "../firmware/epaper_dashboard/epaper_dashboard.ino"
 
 static void fillSampleData() {
-  // settings
   strcpy(g_set.ssid, "AirPort");
   strcpy(g_set.imUser, "alice@example.com");
-  strcpy(g_set.imHost, "imap.migadu.com");
   strcpy(g_set.calMode, "caldav");
-  strcpy(g_set.place, "Los Angeles");
-  strcpy(g_set.tz, "PST8PDT,M3.2.0,M11.1.0");
+  strcpy(g_set.unitT, "c");
   g_set.h24 = false;
   g_set.refreshMin = 5;
-
-  // "now": Wed 2026-07-22 09:45 PDT
-  g_now = 1784738700;
-  localtime_r(&g_now, &g_tm);
-
-  // weather (Celsius — the default unit)
-  strcpy(g_set.unitT, "c");
-  g_haveWx = 1;
-  g_wx.temp = 26; g_wx.feels = 27; g_wx.hum = 52; g_wx.wind = 6;
-  g_wx.code = 2; g_wx.isDay = 1;
-  strcpy(g_wx.cond, "Partly cloudy");
-  strcpy(g_wx.d[0].dow, "Today"); g_wx.d[0].hi = 29; g_wx.d[0].lo = 18; g_wx.d[0].code = 1;  g_wx.d[0].pop = 0;
-  strcpy(g_wx.d[1].dow, "Thu");   g_wx.d[1].hi = 27; g_wx.d[1].lo = 17; g_wx.d[1].code = 2;  g_wx.d[1].pop = 10;
-  strcpy(g_wx.d[2].dow, "Fri");   g_wx.d[2].hi = 25; g_wx.d[2].lo = 16; g_wx.d[2].code = 61; g_wx.d[2].pop = 55;
-
-  // calendar (ts values precomputed for PDT)
-  g_haveCal = 1;
+  fillSampleGlobals();               // the firmware's own sample data
   g_nEvents = 5;
-  auto ev = [&](int i, const char* t, const char* w, uint32_t a, uint32_t b, int day, int allday) {
+  auto ev = [&](int i, const char* t, const char* w, uint32_t a, uint32_t b, int day, int ad) {
     strcpy(g_events[i].title, t); strcpy(g_events[i].when, w);
-    g_events[i].ts0 = a; g_events[i].ts1 = b;
-    g_events[i].day = day; g_events[i].allDay = allday;
+    g_events[i].ts0 = a; g_events[i].ts1 = b; g_events[i].day = day; g_events[i].allDay = ad;
   };
-  ev(0, "Team standup",            "9:30 AM",  1784737800, 1784739600, 0, 0);  // happening now
-  ev(1, "Lunch with Sarah",        "12:00 PM", 1784746800, 1784750400, 0, 0);
-  ev(2, "Dentist - Dr. Alvarez",   "2:00 PM",  1784754000, 1784757600, 0, 0);
-  ev(3, "Building inspection",     "all day",  1784790000, 1784876400, 1, 1);
-  ev(4, "Team standup",            "9:30 AM",  1784824200, 1784826000, 1, 0);
-
-  // inbox
-  g_haveMail = 1;
-  g_unread = 7;
-  g_nEmails = 5;
-  auto em = [&](int i, const char* f, const char* s, uint32_t ts) {
-    strcpy(g_emails[i].from, f); strcpy(g_emails[i].subj, s); g_emails[i].ts = ts;
-  };
-  em(0, "Sarah Chen",    "Re: lunch today? found a new spot on 3rd",      g_now - 720);
-  em(1, "GitHub",        "[epaper-dash] PR #14: CalDAV expand fallback",  g_now - 4500);
-  em(2, "Migadu Status", "Maintenance window Sunday 02:00 UTC",           g_now - 11700);
-  em(3, "Home Depot",    "Your order is ready for pickup",                g_now - 26100);
-  em(4, "Ars Technica",  "Daily: e-paper displays are having a moment",   g_now - 104000);
-
-  strcpy(g_lastIp, "192.168.1.57");
+  ev(2, "Dentist - Dr. Alvarez", "2:00 PM", 1784754000, 1784757600, 0, 0);
+  ev(3, "Building inspection", "all day", 1784790000, 1784876400, 1, 1);
+  ev(4, "Team standup", "9:30 AM", 1784824200, 1784826000, 1, 0);
+  g_nEmails = 4;
+  strcpy(g_emails[3].from, "Home Depot");
+  strcpy(g_emails[3].subj, "Your order is ready for pickup");
+  g_emails[3].ts = g_now - 26100;
   g_bootCount = 137;
-  s_mailOk = s_calOk = s_wxOk = s_wifiOk = true;
-  s_mailErr[0] = s_calErr[0] = 0;
+}
+
+static String readAll(const char* path) {
+  FILE* f = fopen(path, "rb");
+  if (!f) { printf("MISSING %s\n", path); return String(); }
+  String s;
+  int c;
+  while ((c = fgetc(f)) != EOF) s += (char)c;
+  fclose(f);
+  return s;
+}
+
+static void render(const char* out) {
+  display.setFullWindow();
+  display.firstPage();
+  do { drawAll(); } while (display.nextPage());
+  display.dumpPPM(out);
 }
 
 int main(int, char**) {
   setenv("TZ", "PST8PDT,M3.2.0,M11.1.0", 1);
   tzset();
+  system("rm -rf /tmp/fsroot && mkdir -p /tmp/fsroot/b");
+
   fillSampleData();
+  prepareLayout();                       // default (classic) layout from FS
+  render("preview_dashboard.ppm");
 
-  drawAll();
-  display.dumpPPM("preview_dashboard.ppm");
-
-  // offline cycle: WiFi down, cached data shown with red flags
-  s_wifiOk = false; s_mailOk = false; s_calOk = false; s_wxOk = false;
-  drawAll();
-  display.dumpPPM("preview_offline.ppm");
+  s_wifiOk = false; s_mailOk = s_calOk = s_wxOk = false;
+  render("preview_offline.ppm");
   s_wifiOk = true; s_mailOk = s_calOk = s_wxOk = true;
 
-  // first-boot setup screen
   drawSetupScreen(PORTAL_FIRST_BOOT);
   display.dumpPPM("preview_setup.ppm");
+
+  // ---- scene 4: signed blocks installed for real + custom layout ----
+  const char* base = "registry/blocks";   // run the preview from the repo root
+  char err[96];
+  EpbInfo info;
+  const char* names[3] = {"hackernews-top", "crypto-price", "github-stars"};
+  for (int i = 0; i < 3; i++) {
+    char p[160];
+    snprintf(p, sizeof(p), "%s/%s/%s.epb", base, names[i], names[i]);
+    String epb = readAll(p);
+    bool ok = blockInstall(epb.c_str(), epb.length(), /*allowUnsigned=*/false,
+                           err, sizeof(err), &info);
+    printf("install %s: %s (sigOk=%d keyid=%s) %s\n", names[i],
+           ok ? "OK" : "FAIL", info.sigOk, info.keyid, ok ? "" : err);
+    if (!ok) return 1;
+  }
+  const char* customLayout =
+    "[{\"inst\":\"clk\",\"block\":\"core-clock\",\"x\":0,\"y\":0,\"w\":7,\"h\":3},"
+    "{\"inst\":\"dat\",\"block\":\"core-datestatus\",\"x\":7,\"y\":0,\"w\":9,\"h\":3},"
+    "{\"inst\":\"wx\",\"block\":\"core-weather\",\"x\":0,\"y\":3,\"w\":6,\"h\":5},"
+    "{\"inst\":\"fc\",\"block\":\"core-forecast\",\"x\":0,\"y\":8,\"w\":6,\"h\":4},"
+    "{\"inst\":\"cal\",\"block\":\"core-calendar\",\"x\":6,\"y\":3,\"w\":10,\"h\":4},"
+    "{\"inst\":\"hn\",\"block\":\"hackernews-top\",\"x\":6,\"y\":7,\"w\":10,\"h\":3},"
+    "{\"inst\":\"btc\",\"block\":\"crypto-price\",\"x\":6,\"y\":10,\"w\":5,\"h\":2,"
+      "\"params\":{\"coin\":\"bitcoin\"}},"
+    "{\"inst\":\"gh\",\"block\":\"github-stars\",\"x\":11,\"y\":10,\"w\":5,\"h\":2}]";
+  if (!layoutSave(customLayout, strlen(customLayout), err, sizeof(err))) {
+    printf("layoutSave FAIL: %s\n", err);
+    return 1;
+  }
+  prepareLayout();
+  for (int i = 0; i < s_nContrib; i++)
+    if (s_contrib[i].loaded) blockSampleData(s_contrib[i].def, s_contrib[i].data);
+  // nicer sample rows for the HN block
+  for (int i = 0; i < s_nContrib; i++)
+    if (!strcmp(s_contrib[i].def.id, "hackernews-top")) {
+      BlockData& d = s_contrib[i].data;
+      const char* t[4] = {"Show HN: I built an e-paper dashboard with signed blocks",
+                          "The quiet beauty of tri-color e-ink",
+                          "SabreDAV at 20: CalDAV that just works",
+                          "Why declarative beats scriptable for IoT plugins"};
+      d.nRows = 4;
+      for (int r = 0; r < 4; r++) {
+        strcpy(d.rows[r].primary, t[r]);
+        snprintf(d.rows[r].secondary, sizeof(d.rows[r].secondary), "%d", 512 - r * 87);
+      }
+    }
+  render("preview_blocks.ppm");
 
   printf("previews written\n");
   return 0;

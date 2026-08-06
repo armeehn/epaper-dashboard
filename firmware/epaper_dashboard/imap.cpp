@@ -222,7 +222,9 @@ bool imapFetch(const Settings& s, ImapResult& r) {
   if (want > MAXM) want = MAXM;
   int from = nIds - want;
   if (from < 0) from = 0;
-  if (nIds > 0) {
+  // transient header buffer on the heap (keeps 4 KB out of static RAM)
+  char* block = (char*)malloc(4096);
+  if (nIds > 0 && block) {
     String set;
     for (int i = from; i < nIds; i++) {
       if (set.length()) set += ",";
@@ -241,7 +243,6 @@ bool imapFetch(const Settings& s, ImapResult& r) {
         long need = atol(l.c_str() + br + 1);      // literal length
         if (need < 0) need = 0;
         const long keepMax = 3800;
-        static char block[4096];
         long got = 0, kept = 0;
         uint32_t t0 = millis();
         uint8_t bin[128];
@@ -266,6 +267,7 @@ bool imapFetch(const Settings& s, ImapResult& r) {
       }
     }
   }
+  free(block);
 
   tag = c.sendCmd("LOGOUT");
   c.waitTagged(tag);

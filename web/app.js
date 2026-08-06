@@ -402,3 +402,246 @@ function prefill(c) {
     }
   } catch (e) {}
 }
+
+// ================= tabs =================
+document.querySelectorAll('#mainTabs a').forEach(a => a.onclick = (e) => {
+  e.preventDefault();
+  document.querySelectorAll('#mainTabs a').forEach(x => x.classList.remove('active'));
+  a.classList.add('active');
+  for (const t of ['setup', 'layout', 'blocks'])
+    $(`tab-${t}`).classList.toggle('step-hidden', a.dataset.tab !== t);
+  if (a.dataset.tab === 'layout') edInit();
+  if (a.dataset.tab === 'blocks') blRefresh();
+});
+
+// ================= layout editor =================
+const COLS = 16, ROWS = 12, CX = 35, CY = 28;   // display cells (real: 50x40 px)
+const BUILTINS = {
+  'core-clock':      { name: 'Clock',          minW: 5, minH: 2 },
+  'core-datestatus': { name: 'Date & status',  minW: 5, minH: 2 },
+  'core-weather':    { name: 'Weather now',    minW: 5, minH: 4 },
+  'core-forecast':   { name: '3-day forecast', minW: 5, minH: 3 },
+  'core-calendar':   { name: 'Calendar',       minW: 6, minH: 3 },
+  'core-inbox':      { name: 'Inbox',          minW: 6, minH: 3 },
+};
+let ed = { layout: [], blocks: [], sel: null, inited: false };
+
+function blockMeta(id) {
+  if (BUILTINS[id]) return BUILTINS[id];
+  const b = ed.blocks.find(x => x.id === id);
+  return b ? { name: b.name, minW: b.minW || 2, minH: b.minH || 2, params: b.params || [] }
+           : { name: id, minW: 2, minH: 2 };
+}
+
+async function edInit() {
+  if (ed.inited) return;
+  ed.inited = true;
+  try {
+    const [lay, bl] = [await api('/api/layout'), await api('/api/blocks')];
+    ed.layout = Array.isArray(lay) ? lay : [];
+    ed.blocks = (bl && bl.blocks) || [];
+  } catch (e) { alertBox('ed-alert', 'danger', 'Could not load layout from the device.'); }
+  const sel = $('ed-add-sel');
+  sel.innerHTML = '';
+  for (const [id, m] of Object.entries(BUILTINS)) sel.add(new Option(m.name + ' (built-in)', id));
+  for (const b of ed.blocks) sel.add(new Option(`${b.name} — ${b.author}`, b.id));
+  edRender();
+}
+
+function edRender() {
+  const cv = $('ed-canvas');
+  cv.innerHTML = '';
+  ed.layout.forEach((it, i) => {
+    const m = blockMeta(it.block);
+    const d = document.createElement('div');
+    d.className = 'ed-tile';
+    d.style.cssText = `position:absolute;left:${it.x * CX}px;top:${it.y * CY}px;` +
+      `width:${it.w * CX - 2}px;height:${it.h * CY - 2}px;` +
+      `background:${it.block.startsWith('core-') ? '#fff' : '#fdf0ee'};border:1.5px solid #1a1a1a;` +
+      `border-radius:4px;font-size:11px;padding:3px 5px;cursor:grab;overflow:hidden;user-select:none;` +
+      (ed.sel === i ? 'outline:3px solid #c0392b;' : '');
+    d.innerHTML = `<b>${esc(m.name)}</b><div class="text-secondary">${it.w}×${it.h}</div>` +
+      `<div style="position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;` +
+      `background:linear-gradient(135deg,#0000 50%,#c0392b 50%)" data-rs="1"></div>`;
+    d.onpointerdown = (e) => edDown(e, i, e.target.dataset.rs === '1');
+    cv.appendChild(d);
+  });
+  edParamsPanel();
+}
+
+let drag = null;
+function edDown(e, i, resize) {
+  e.preventDefault();
+  ed.sel = i;
+  const it = ed.layout[i];
+  drag = { i, resize, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y, ow: it.w, oh: it.h, moved: false };
+  window.onpointermove = edMove;
+  window.onpointerup = edUp;
+  edRender();
+}
+function edMove(e) {
+  if (!drag) return;
+  const it = ed.layout[drag.i], m = blockMeta(it.block);
+  const dx = Math.round((e.clientX - drag.sx) / CX), dy = Math.round((e.clientY - drag.sy) / CY);
+  if (dx || dy) drag.moved = true;
+  if (drag.resize) {
+    it.w = Math.max(m.minW || 2, Math.min(COLS - it.x, drag.ow + dx));
+    it.h = Math.max(m.minH || 2, Math.min(ROWS - it.y, drag.oh + dy));
+  } else {
+    it.x = Math.max(0, Math.min(COLS - it.w, drag.ox + dx));
+    it.y = Math.max(0, Math.min(ROWS - it.h, drag.oy + dy));
+  }
+  edRender();
+}
+function edUp() {
+  if (drag) {
+    const it = ed.layout[drag.i];
+    const hit = ed.layout.some((o, j) => j !== drag.i &&
+      it.x < o.x + o.w && o.x < it.x + it.w && it.y < o.y + o.h && o.y < it.y + it.h);
+    if (hit) { it.x = drag.ox; it.y = drag.oy; it.w = drag.ow; it.h = drag.oh;
+               alertBox('ed-alert', 'warning', 'Blocks can\'t overlap — move reverted.'); }
+    else alertBox('ed-alert', '', '');
+  }
+  drag = null;
+  window.onpointermove = window.onpointerup = null;
+  edRender();
+}
+
+function edParamsPanel() {
+  const p = $('ed-params');
+  if (ed.sel === null || !ed.layout[ed.sel]) { p.classList.add('step-hidden'); return; }
+  const it = ed.layout[ed.sel], m = blockMeta(it.block);
+  let html = `<div class="d-flex justify-content-between"><b>${esc(m.name)}</b>` +
+    `<button class="btn btn-outline-danger btn-sm" onclick="edRemove()">Remove from layout</button></div>`;
+  (m.params || []).forEach(pr => {
+    const val = (it.params && it.params[pr.key]) ?? pr.default ?? '';
+    if (pr.type === 'choice') {
+      const opts = (pr.choices || '').split(',').map(c =>
+        `<option ${c === val ? 'selected' : ''}>${esc(c)}</option>`).join('');
+      html += `<label class="form-label small mt-2">${esc(pr.label)}</label>` +
+        `<select class="form-select form-select-sm" onchange="edParam('${pr.key}',this.value)">${opts}</select>`;
+    } else {
+      html += `<label class="form-label small mt-2">${esc(pr.label)}</label>` +
+        `<input class="form-control form-control-sm" value="${esc(val)}" ` +
+        `onchange="edParam('${pr.key}',this.value)">`;
+    }
+  });
+  p.innerHTML = html;
+  p.classList.remove('step-hidden');
+}
+function edParam(k, v) {
+  const it = ed.layout[ed.sel];
+  it.params = it.params || {};
+  it.params[k] = v;
+}
+function edRemove() {
+  ed.layout.splice(ed.sel, 1);
+  ed.sel = null;
+  edRender();
+}
+function edAdd() {
+  const id = $('ed-add-sel').value, m = blockMeta(id);
+  const w = m.minW || 3, h = m.minH || 2;
+  for (let y = 0; y <= ROWS - h; y++) for (let x = 0; x <= COLS - w; x++) {
+    const hit = ed.layout.some(o => x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h);
+    if (!hit) {
+      ed.layout.push({ inst: 'i' + Math.floor(performance.now() % 1e6), block: id, x, y, w, h, params: {} });
+      ed.sel = ed.layout.length - 1;
+      edRender();
+      return;
+    }
+  }
+  alertBox('ed-alert', 'warning', 'No free space — remove or shrink something first.');
+}
+async function edSave() {
+  busy('btn-savelayout', true, 'Saving…');
+  try {
+    const r = await api('/api/layout', { method: 'POST', body: JSON.stringify(ed.layout) }, 2);
+    alertBox('ed-alert', r.ok ? 'success' : 'danger', r.ok ? 'Layout saved — it draws on the next refresh (or press Preview).' : esc(r.msg));
+  } catch (e) { alertBox('ed-alert', 'danger', 'Device didn\'t answer.'); }
+  busy('btn-savelayout', false);
+}
+async function edPreview() {
+  // Sends the CURRENT canvas: the device saves it, then renders it — so the
+  // panel always shows exactly what you see here, even without pressing Save.
+  busy('btn-preview', true, 'Saving & rendering…');
+  try {
+    const r = await api('/api/preview', { method: 'POST', body: JSON.stringify(ed.layout) }, 1);
+    if (r.ok) alertBox('ed-alert', 'info', 'Layout saved — the panel is drawing it now (~25 s of flashing).');
+    else alertBox('ed-alert', 'danger', esc(r.msg || 'Layout rejected.'));
+  } catch (e) { alertBox('ed-alert', 'danger', 'Device didn\'t answer.'); }
+  setTimeout(() => busy('btn-preview', false), 3000);
+}
+
+// ================= blocks manager =================
+async function blRefresh() {
+  try {
+    const r = await api('/api/blocks');
+    ed.blocks = (r && r.blocks) || [];
+    $('bl-unsigned').checked = !!(r && r.allowUnsigned);
+    const L = $('bl-list');
+    L.innerHTML = '';
+    if (!ed.blocks.length)
+      L.innerHTML = '<div class="list-group-item text-secondary small">No contributed blocks installed yet — the built-ins are always available in the Layout tab.</div>';
+    for (const b of ed.blocks) {
+      const d = document.createElement('div');
+      d.className = 'list-group-item d-flex justify-content-between align-items-center';
+      const badge = b.sigOk
+        ? `<span class="badge text-bg-success">signed · ${esc(b.keyid)}</span>`
+        : '<span class="badge text-bg-warning">unsigned</span>';
+      d.innerHTML = `<span><b>${esc(b.name)}</b> <span class="text-secondary small">v${esc(b.version)} — ${esc(b.author)}</span> ${badge}</span>` +
+        `<button class="btn btn-outline-danger btn-sm" onclick="blRemove('${esc(b.id)}')">Remove</button>`;
+      L.appendChild(d);
+    }
+    ed.inited = false;   // palette refresh next time layout opens
+  } catch (e) { alertBox('bl-alert', 'danger', 'Could not reach the device.'); }
+}
+async function blRemove(id) {
+  await api('/api/blocks/remove', { method: 'POST', body: JSON.stringify({ id }) }, 2).catch(() => {});
+  blRefresh();
+}
+async function blPolicy() {
+  await api('/api/blocks/policy', { method: 'POST', body: JSON.stringify({ allowUnsigned: $('bl-unsigned').checked }) }, 2).catch(() => {});
+}
+function blResult(r) {
+  if (r.ok) {
+    const sig = r.sigOk ? `signature verified (${esc(r.keyid)})` : 'installed UNSIGNED';
+    alertBox('bl-alert', r.sigOk ? 'success' : 'warning', `Block installed — ${sig}. Add it in the Layout tab.`);
+  } else alertBox('bl-alert', 'danger', esc(r.msg || 'install failed'));
+  blRefresh();
+}
+async function blInstallUrl() {
+  const url = $('bl-url').value.trim();
+  if (!url) return;
+  try { blResult(await api('/api/blocks/install', { method: 'POST', body: JSON.stringify({ url }) }, 2)); }
+  catch (e) { alertBox('bl-alert', 'danger', 'Device didn\'t answer.'); }
+}
+async function blInstallPaste() {
+  const content = $('bl-paste').value.trim();
+  if (!content) return;
+  try { blResult(await api('/api/blocks/install', { method: 'POST', body: JSON.stringify({ content }) }, 2)); }
+  catch (e) { alertBox('bl-alert', 'danger', 'Device didn\'t answer.'); }
+}
+async function blRegistry() {
+  const url = $('bl-reg-url').value.trim();
+  if (!url) return;
+  try {
+    const r = await api('/api/registry?url=' + encodeURIComponent(url), null, 2);
+    const L = $('bl-reg-list');
+    L.innerHTML = '';
+    if (!r.ok) { alertBox('bl-alert', 'danger', esc(r.msg)); return; }
+    alertBox('bl-alert', r.sigOk ? 'success' : 'warning',
+      r.sigOk ? `Registry index signature verified (${esc(r.keyid)}).` : 'Registry index is NOT signed by a trusted key.');
+    for (const b of (r.blocks || [])) {
+      const d = document.createElement('div');
+      d.className = 'list-group-item d-flex justify-content-between align-items-center';
+      d.innerHTML = `<span><b>${esc(b.name)}</b> <span class="text-secondary small">${esc(b.description || '')}</span></span>` +
+        `<button class="btn btn-outline-dark btn-sm" onclick='blInstallFromReg(${JSON.stringify(b.epb)})'>Install</button>`;
+      L.appendChild(d);
+    }
+  } catch (e) { alertBox('bl-alert', 'danger', 'Device didn\'t answer.'); }
+}
+async function blInstallFromReg(url) {
+  try { blResult(await api('/api/blocks/install', { method: 'POST', body: JSON.stringify({ url }) }, 2)); }
+  catch (e) { alertBox('bl-alert', 'danger', 'Device didn\'t answer.'); }
+}

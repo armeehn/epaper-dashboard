@@ -64,6 +64,8 @@ bool settingsApplyJson(JsonDocument& doc) {
   s.quietStart = r["qs"] | 0;
   s.quietEnd = r["qe"] | 6;
 
+  s.allowUnsigned = doc["blocks"]["allowUnsigned"] | g_set.allowUnsigned;
+
   if (!s.ssid[0]) return false;
   g_set = s;
   return true;
@@ -85,6 +87,7 @@ void settingsToJson(JsonDocument& doc) {
   JsonObject r = doc["refresh"].to<JsonObject>();
   r["min"] = g_set.refreshMin; r["quiet"] = g_set.quiet;
   r["qs"] = g_set.quietStart; r["qe"] = g_set.quietEnd;
+  doc["blocks"]["allowUnsigned"] = g_set.allowUnsigned;
 }
 
 bool settingsSave() {

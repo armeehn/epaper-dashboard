@@ -9,6 +9,10 @@
 #include "../firmware/epaper_dashboard/imap.h"
 #include "../firmware/epaper_dashboard/caldav.h"
 #include "../firmware/epaper_dashboard/settings.h"
+#include "../firmware/epaper_dashboard/blocks.h"
+#include "../firmware/epaper_dashboard/blocksig.h"
+#include "../firmware/epaper_dashboard/fsstore.h"
+#include <LittleFS.h>
 
 static int passed = 0, failed = 0;
 #define CHECK(cond, name) do { \
@@ -309,6 +313,115 @@ static void testSettings() {
   CHECK_STR(g_set.imPass, "", "imap pass dropped for new user");
 }
 
+
+static void testBlocks() {
+  const char* J =
+    "{\"id\":\"test-block\",\"name\":\"Test\",\"source\":{\"type\":\"json\","
+    "\"url\":\"https://api.example.com/x?q={q}\"},"
+    "\"params\":[{\"key\":\"q\",\"label\":\"Query\",\"default\":\"a b\"}],"
+    "\"extract\":[{\"name\":\"v\",\"path\":\"a.b[1].c\",\"round\":true,\"prefix\":\"$\"},"
+    "{\"name\":\"m\",\"path\":\"code\",\"map\":\"0:Clear,1:Cloudy,def:Other\"},"
+    "{\"name\":\"rows\",\"path\":\"items\",\"primary\":\"t\",\"secondary\":\"n\",\"limit\":2}],"
+    "\"render\":{\"widget\":\"big-number\",\"value\":\"{v}\",\"sub\":\"is {m}\"}}";
+  BlockDef def; char err[96];
+  CHECK(blockParse(J, strlen(J), def, err, sizeof(err)), "block parses");
+  CHECK_STR(def.id, "test-block", "block id");
+  CHECK_EQ(def.widget, BW_BIG_NUMBER, "widget kind");
+  CHECK_EQ(def.nExtracts, 3, "extract count");
+
+  JsonDocument data;
+  deserializeJson(data,
+    "{\"a\":{\"b\":[{\"c\":1},{\"c\":41.6}]},\"code\":1,"
+    "\"items\":[{\"t\":\"one\",\"n\":7},{\"t\":\"two\",\"n\":8},{\"t\":\"three\"}]}");
+  BlockData d;
+  for (int i = 0; i < def.nExtracts; i++)
+    blockApplyExtract(def.extracts[i], data.as<JsonVariantConst>(), d);
+  CHECK_EQ(d.nValues, 2, "two scalars");
+  CHECK_STR(d.values[0].text, "$42", "round+prefix");
+  CHECK_STR(d.values[1].text, "Cloudy", "map lookup");
+  CHECK_EQ(d.nRows, 2, "list limit");
+  CHECK_STR(d.rows[0].primary, "one", "row primary");
+  CHECK_STR(d.rows[0].secondary, "7", "row secondary");
+  d.ok = true;
+  char buf[64];
+  blockTemplate("v={v} m={m}", d, buf, sizeof(buf));
+  CHECK_STR(buf, "v=$42 m=Cloudy", "template");
+  blockTemplate("{missing}", d, buf, sizeof(buf));
+  CHECK_STR(buf, "--", "missing binding");
+
+  JsonDocument ip; ip["q"] = "x&y";
+  String url = blockSubstUrl(def, ip.as<JsonObjectConst>());
+  CHECK_STR(url.c_str(), "https://api.example.com/x?q=x%26y", "url subst+encode");
+
+  CHECK(blockUrlAllowed("https://api.example.com/x", err, sizeof(err)), "url ok");
+  CHECK(!blockUrlAllowed("http://api.example.com/x", err, sizeof(err)), "http refused");
+  CHECK(!blockUrlAllowed("https://192.168.1.1/x", err, sizeof(err)), "private ip refused");
+  CHECK(!blockUrlAllowed("https://printer.local/x", err, sizeof(err)), ".local refused");
+
+  const char* BAD = "{\"id\":\"x\",\"source\":{\"type\":\"json\",\"url\":\"https://a.b/\"},"
+    "\"params\":[{\"key\":\"p\",\"type\":\"secret\"}],\"render\":{\"widget\":\"text\"}}";
+  CHECK(!blockParse(BAD, strlen(BAD), def, err, sizeof(err)), "secret param refused");
+}
+
+static void testEpbAndStore() {
+  LittleFS.root = "/tmp/fsroot-test";
+  system("rm -rf /tmp/fsroot-test");
+  LittleFS.begin(true);
+
+  String epb = ([]{ FILE* f = fopen("registry/blocks/crypto-price/crypto-price.epb", "rb");
+    String s; if (f) { int c; while ((c = fgetc(f)) != EOF) s += (char)c; fclose(f); } return s; })();
+  CHECK(epb.length() > 100, "epb file present");
+
+  String payload; EpbInfo info;
+  CHECK(epbOpen(epb.c_str(), epb.length(), payload, info), "envelope parses");
+  CHECK(info.sigPresent && info.sigOk, "REAL ECDSA signature verifies");
+  CHECK_STR(info.keyid, "demo-registry-2026", "keyid");
+
+  // tamper with one payload byte -> must fail
+  String bad = epb;
+  int pi = bad.indexOf("\"payload\"") + 15;
+  bad[pi + 20] = bad[pi + 20] == 'A' ? 'B' : 'A';
+  String p2; EpbInfo i2;
+  if (epbOpen(bad.c_str(), bad.length(), p2, i2)) CHECK(!i2.sigOk, "tampered payload rejected");
+  else CHECK(true, "tampered payload rejected (parse)");
+
+  char err[96]; EpbInfo i3;
+  CHECK(blockInstall(epb.c_str(), epb.length(), false, err, sizeof(err), &i3), "signed install ok");
+  const char* bare = "{\"id\":\"bare-block\",\"source\":{\"type\":\"json\",\"url\":\"https://a.example/\"},\"extract\":[],\"render\":{\"widget\":\"text\"}}";
+  CHECK(!blockInstall(bare, strlen(bare), false, err, sizeof(err)), "unsigned refused by policy");
+  CHECK(blockInstall(bare, strlen(bare), true, err, sizeof(err)), "unsigned ok when allowed");
+
+  JsonDocument idx; blocksList(idx);
+  CHECK_EQ((int)idx.as<JsonArrayConst>().size(), 2, "index has both");
+  BlockDef def;
+  CHECK(blockLoadDef("crypto-price", def), "load installed def");
+  CHECK(blockRemove("bare-block"), "remove works");
+
+  const char* lay = "[{\"inst\":\"a\",\"block\":\"core-clock\",\"x\":0,\"y\":0,\"w\":7,\"h\":3},"
+    "{\"inst\":\"b\",\"block\":\"crypto-price\",\"x\":7,\"y\":0,\"w\":5,\"h\":3}]";
+  CHECK(layoutSave(lay, strlen(lay), err, sizeof(err)), "layout saves");
+  const char* layBad = "[{\"inst\":\"a\",\"block\":\"core-clock\",\"x\":12,\"y\":0,\"w\":7,\"h\":3}]";
+  CHECK(!layoutSave(layBad, strlen(layBad), err, sizeof(err)), "off-grid refused");
+  const char* layBad2 = "[{\"inst\":\"a\",\"block\":\"nope\",\"x\":0,\"y\":0,\"w\":3,\"h\":3}]";
+  CHECK(!layoutSave(layBad2, strlen(layBad2), err, sizeof(err)), "unknown block refused");
+  JsonDocument doc; layoutLoad(doc);
+  CHECK_EQ((int)doc.as<JsonArrayConst>().size(), 2, "layout round-trips");
+
+  // Regression (LAN editor "Save & preview"): a long-lived document that
+  // already holds the old layout must pick up freshly saved geometry when
+  // reloaded — the on-panel preview re-reads /layout.json through exactly
+  // this path, and must never draw stale state.
+  const char* lay2 = "[{\"inst\":\"a\",\"block\":\"core-clock\",\"x\":4,\"y\":2,\"w\":8,\"h\":4}]";
+  CHECK(layoutSave(lay2, strlen(lay2), err, sizeof(err)), "re-save accepted");
+  layoutLoad(doc);   // same doc as before, no clear() in between
+  CHECK_EQ((int)doc.as<JsonArrayConst>().size(), 1, "reload sees new block count");
+  CHECK_EQ((int)(doc[0]["x"] | -1), 4, "reload sees new geometry");
+  // ...and a rejected save must leave the stored layout untouched
+  CHECK(!layoutSave(layBad, strlen(layBad), err, sizeof(err)), "bad re-save refused");
+  layoutLoad(doc);
+  CHECK_EQ((int)(doc[0]["x"] | -1), 4, "rejected save changed nothing");
+}
+
 int main(int, char**) {
   setenv("TZ", "PST8PDT,M3.2.0,M11.1.0", 1);
   tzset();
@@ -317,6 +430,8 @@ int main(int, char**) {
   testImapParse();
   testDavXml();
   testSettings();
+  testBlocks();
+  testEpbAndStore();
   printf("\n%d passed, %d failed\n", passed, failed);
   return failed ? 1 : 0;
 }

@@ -34,6 +34,8 @@ struct Settings {
   int refreshMin = 5;
   bool quiet = true;
   int quietStart = 0, quietEnd = 6;
+  // blocks policy
+  bool allowUnsigned = false;   // install unsigned blocks? (explicit opt-in)
 
   bool valid() const { return ssid[0] != 0; }
 };

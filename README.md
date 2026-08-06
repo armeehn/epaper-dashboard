@@ -5,6 +5,13 @@ on the Waveshare e-Paper ESP32 Driver Board. Flash it once; everything else is
 configured **on the device itself** through a Bootstrap setup wizard — no code
 edits, no cloud backend, no Google account required.
 
+| Custom layout with signed community blocks | Drag-and-drop layout editor |
+| --- | --- |
+| ![blocks](docs/dashboard_blocks.png) | ![editor](docs/editor_layout.png) |
+
+*(Previews are rendered by the actual firmware drawing code on a mock
+framebuffer — `tests/host/build_preview.sh` regenerates them.)*
+
 On every refresh cycle the ESP32 wakes from deep sleep and fetches, all by itself:
 
 - **Email** over **IMAP** (works with Migadu, Fastmail, and any standard IMAP
@@ -65,9 +72,27 @@ Arduino IDE 2.x:
    (the embedded Bootstrap UI + TLS stacks need the room).
 5. Upload. Done — everything else happens in the wizard.
 
-PlatformIO: `cd firmware && pio run -t upload` (partitions are set via
-`board_build.partitions` if you add it; Huge APP equivalent =
-`huge_app.csv`).
+PlatformIO: `cd firmware && pio run -t upload` (Huge APP partitions are
+preconfigured in `platformio.ini`).
+
+### Or skip local compiling entirely
+
+Every push builds the firmware on GitHub Actions (`firmware` workflow) with
+the real ESP32 toolchain and uploads ready-to-flash binaries: open the run's
+**Artifacts**, grab `epaper-dashboard-factory.bin`, and flash it with nothing
+but Python's esptool —
+
+```sh
+pip install esptool==4.8.1
+python3 -m esptool --chip esp32 --port <PORT> --baud 921600 \
+    write_flash 0x0 epaper-dashboard-factory.bin
+```
+
+`epaper-dashboard-app.bin` written at `0x10000` instead updates the firmware
+while **keeping** your WiFi/settings/blocks/layout. A browser-based flasher
+(Chrome/Edge, e.g. esptool-js) can also write the factory image at `0x0` with
+zero installs — full instructions ship in the artifact's `FLASHING.txt`.
+Pushing a tag like `v3.0.0` attaches the same binaries to a GitHub Release.
 
 If your panel isn't the 800×480 (B) V2/V3, switch the `PANEL_…` define in
 `firmware/epaper_dashboard/config.h` — that and pins are the only compile-time
@@ -93,8 +118,49 @@ tools/make_assets.py        regenerate portal_assets.h after editing web/
 tools/make_gfx_font.py      regenerate the clock fonts
 tools/arduino_proto_check.py emulates the IDE's prototype-hoisting to catch
                             "does not name a type" errors before flashing
-tests/test_parsers.cpp      host unit tests (73 checks) for all parsers
+tests/test_parsers.cpp      host unit tests (111 checks: parsers, block
+                            engine, signature verification, storage)
+tests/host/                 self-contained verification harness: stubs,
+                            run_tests.sh (what CI runs), build_preview.sh
+registry/                   signed example blocks + signing tool docs
+DESIGN.md                   block system spec, trust model, threat model
 ```
+
+## Editing the layout after setup
+
+Tap **RST** once. The device runs a normal refresh, and because that was a
+manual reset (not a timer wake) it then keeps its web server up on your home
+WiFi for an editing session: open **http://epaper-dashboard.local/** (or the
+IP shown in the dashboard footer) and use the Layout / Blocks tabs directly
+from your computer — with your real data loaded, so the preview shows the
+actual dashboard, not samples. **Save & preview on panel** first saves the
+canvas you're looking at and then renders exactly that, so the panel never
+shows a stale layout. The window closes after 5 idle minutes
+(30 min hard cap) and the device goes back to deep sleep; saved layouts
+apply from the very next refresh.
+
+The full settings portal (RST, then hold BOOT ~2 s) still exists for
+changing WiFi/accounts — and it now auto-joins your home network with the
+stored credentials, so registry installs and tests work there immediately.
+
+## Blocks: movable, community-contributed widgets (v3)
+
+The screen is a **16×12 grid** of movable blocks. The portal's **Layout** tab
+is a drag-and-drop editor (move, resize, per-block settings, live preview on
+the panel); the **Blocks** tab installs community blocks. The six classic
+sections (clock, date, weather, forecast, calendar, inbox) are built-in
+blocks on the same grid — the default layout is exactly the classic screen.
+
+Contributed blocks are **declarative JSON, never code**: an HTTPS source,
+value extractions, and a widget from a fixed vocabulary — interpreted by the
+firmware's engine with SSRF guards and size caps. They're distributed as
+signed `.epb` files verified on-device (ECDSA P-256) against
+`trusted_keys.h`; unsigned installs are refused unless explicitly allowed.
+Four signed examples ship in `registry/` (Hacker News, crypto price, air
+quality, GitHub stars) along with `tools/block_sign.py` (keygen/sign/index)
+and a contribution guide. **The bundled demo signing key is public** — mint
+your own before trusting real registries. Full spec, trust model, and threat
+model: `DESIGN.md`.
 
 ## Behavior details
 
@@ -125,6 +191,15 @@ certificate validation (no CA store management on-device) — fine for a home
 dashboard, worth knowing about. Credentials are stored unencrypted in NVS, as
 is normal for ESP32 projects; anyone with physical USB access to the board
 could read them.
+
+## Development & CI
+
+`bash tests/host/run_tests.sh` runs the entire verification suite on any
+Linux box (or GitHub Actions — see `.github/workflows/ci.yml`): strict
+compilation of all translation units against the real libraries, an
+emulation of the Arduino IDE's prototype-hoisting quirk, and 111 unit tests
+including a real ECDSA signature round-trip through mbedTLS. Dependencies
+auto-clone into `tests/host/.deps` on first run. No hardware needed.
 
 ## Troubleshooting
 

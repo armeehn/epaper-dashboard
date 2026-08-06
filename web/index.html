@@ -28,6 +28,13 @@
     <div class="text-secondary small" id="hdr-sub">Let's get your display online</div>
   </div>
 
+  <ul class="nav nav-pills nav-fill mb-3" id="mainTabs">
+    <li class="nav-item"><a class="nav-link active" data-tab="setup" href="#">Setup</a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="layout" href="#">Layout</a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="blocks" href="#">Blocks</a></li>
+  </ul>
+
+  <div id="tab-setup">
   <div class="progress mb-3" style="height: 6px;">
     <div class="progress-bar bg-danger" id="progress" style="width: 5%;"></div>
   </div>
@@ -272,6 +279,65 @@
       <p class="text-secondary">Configuration saved. The display is rebooting and will draw your dashboard shortly.<br>
       You can close this page and rejoin your normal WiFi.</p>
       <p class="small text-secondary">To change settings later: tap <strong>RST</strong>, then immediately press &amp; hold <strong>BOOT</strong> for ~2 seconds — the setup network will come back. (Don't hold BOOT <em>while</em> pressing RST: that puts the chip into its flashing mode instead.)</p>
+    </div>
+  </div>
+
+  </div><!-- /tab-setup -->
+
+  <!-- LAYOUT TAB -->
+  <div id="tab-layout" class="step-hidden">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="mb-0">Screen layout</h5>
+          <div class="d-flex gap-2">
+            <select class="form-select form-select-sm" id="ed-add-sel" style="width:auto"></select>
+            <button class="btn btn-outline-dark btn-sm" onclick="edAdd()">Add</button>
+          </div>
+        </div>
+        <div class="text-secondary small mb-2">Drag tiles to move · drag the ◢ corner to resize · click to select &amp; configure. The grid is the real 800×480 panel.</div>
+        <div id="ed-canvas" style="position:relative;width:560px;height:336px;max-width:100%;
+             background:#fbf9f4;border:2px solid #1a1a1a;
+             background-image:repeating-linear-gradient(#0000 0 27px,#00000014 27px 28px),
+                              repeating-linear-gradient(90deg,#0000 0 34px,#00000014 34px 35px);
+             touch-action:none;"></div>
+        <div id="ed-params" class="border rounded p-2 mt-2 step-hidden"></div>
+        <div id="ed-alert" class="mt-2"></div>
+        <div class="d-flex gap-2 mt-2">
+          <button class="btn btn-epaper flex-fill" id="btn-savelayout" onclick="edSave()">Save layout</button>
+          <button class="btn btn-outline-danger" id="btn-preview" onclick="edPreview()">Save &amp; preview on panel</button>
+        </div>
+        <div class="form-text">Preview saves this canvas, then draws it on the e-paper — with your real data when the device has it, sample data otherwise (~25 s of flashing).</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BLOCKS TAB -->
+  <div id="tab-blocks" class="step-hidden">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body p-3">
+        <h5>Installed blocks</h5>
+        <div class="text-secondary small mb-2">Blocks are <strong>data, not code</strong> — a fixed on-device engine fetches and draws them; nothing a block declares can execute. Signed blocks are verified against this device's trusted keys before install.</div>
+        <div class="list-group mb-3" id="bl-list"></div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="bl-unsigned" onchange="blPolicy()">
+          <label class="form-check-label small" for="bl-unsigned">Allow <strong>unsigned</strong> blocks (for local development — signed-only is safer)</label>
+        </div>
+        <h6>Install from registry</h6>
+        <div class="input-group input-group-sm mb-2">
+          <input class="form-control mono" id="bl-reg-url" placeholder="https://…/index.json">
+          <button class="btn btn-outline-dark" onclick="blRegistry()">Load</button>
+        </div>
+        <div class="list-group mb-3" id="bl-reg-list"></div>
+        <h6>Install one block</h6>
+        <div class="input-group input-group-sm mb-2">
+          <input class="form-control mono" id="bl-url" placeholder="https://…/block.epb">
+          <button class="btn btn-outline-dark" onclick="blInstallUrl()">Install from URL</button>
+        </div>
+        <textarea class="form-control mono form-control-sm mb-2" id="bl-paste" rows="3" placeholder='paste a .epb here'></textarea>
+        <button class="btn btn-outline-dark btn-sm" onclick="blInstallPaste()">Install pasted block</button>
+        <div id="bl-alert" class="mt-2"></div>
+      </div>
     </div>
   </div>
 

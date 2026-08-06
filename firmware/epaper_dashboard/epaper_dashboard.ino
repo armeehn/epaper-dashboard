@@ -21,6 +21,8 @@
 #include "caldav.h"
 #include "weather.h"
 #include "portal.h"
+#include "blocks.h"
+#include "fsstore.h"
 
 #include <WiFi.h>
 #include <time.h>
@@ -80,11 +82,49 @@ static char s_mailErr[96], s_calErr[96];
 static time_t g_now;
 static struct tm g_tm;
 
-// Weather icon kinds. MUST stay above the first function definition: the
-// Arduino IDE auto-generates function prototypes and hoists them to just
-// above the first function, so iconForCode()'s prototype (which returns
-// IconKind) needs this enum declared before that point.
+// Weather icon kinds. MUST stay above the FIRST function definition in this
+// file: the Arduino IDE hoists auto-generated prototypes there, and
+// iconForCode()'s prototype returns IconKind. (Guarded by the
+// tools/arduino_proto_check.py emulation in CI.)
 enum IconKind { IC_SUN, IC_PART, IC_CLOUD, IC_FOG, IC_RAIN, IC_SNOW, IC_STORM };
+
+// ---------------- layout + contributed blocks ----------------
+#define MAX_CONTRIB 6
+struct ContribSlot {
+  char inst[14];
+  int layoutIdx = -1;   // index into the layout array (for params)
+  BlockDef def;
+  BlockData data;
+  bool loaded = false;
+};
+static JsonDocument s_layoutDoc;         // parsed layout (loaded once per boot)
+// Contributed-block slots are ~5 KB each (BlockDef + BlockData), so they are
+// heap-allocated once instead of static: the ESP32's dram0 static segment is
+// only ~180 KB and the 48 KB display buffer already lives there.
+static ContribSlot* s_contrib = nullptr;
+static int s_nContrib = 0;
+
+// Load layout + installed contributed defs. Safe to call in any mode.
+static void prepareLayout() {
+  if (!s_contrib) s_contrib = new ContribSlot[MAX_CONTRIB];
+  layoutLoad(s_layoutDoc);
+  s_nContrib = 0;
+  int idx = -1;
+  for (JsonObjectConst it : s_layoutDoc.as<JsonArrayConst>()) {
+    idx++;
+    const char* id = it["block"] | "";
+    if (strncmp(id, "core-", 5) == 0) continue;
+    if (s_nContrib >= MAX_CONTRIB) continue;
+    ContribSlot& s = s_contrib[s_nContrib];
+    strlcpy(s.inst, it["inst"] | "", sizeof(s.inst));
+    s.layoutIdx = idx;
+    s.loaded = blockLoadDef(id, s.def);
+    s.data = BlockData();
+    if (!s.loaded)
+      Serial.printf("layout: block '%s' missing/corrupt\n", id);
+    s_nContrib++;
+  }
+}
 
 // ---------------- small draw helpers ----------------
 static uint16_t textWidth(const String& s) {
@@ -253,25 +293,30 @@ static String fmtClock(const struct tm& t, bool withAmPm) {
   return String(buf);
 }
 
-// ---------------- dashboard sections ----------------
-static void drawTopBand(int16_t W, int16_t bandH) {
+// ---------------- dashboard sections (grid blocks) ----------------
+// Every renderer draws into its own rect (x, y, w, h in pixels).
+
+static void drawClockBlock(int16_t x, int16_t y, int16_t w, int16_t h) {
   display.setFont(&DashClockFont);
   String timeStr = fmtClock(g_tm, false);
   int16_t x1, y1; uint16_t tw, th;
   display.getTextBounds(timeStr, 0, 0, &x1, &y1, &tw, &th);
-  int16_t tx = 20, tyBase = 104;
-  printAt(tx, tyBase, timeStr, GxEPD_BLACK);
+  int16_t tyBase = y + h - 14;
+  printAt(x + 20, tyBase, timeStr, GxEPD_BLACK);
   if (!g_set.h24) {
     display.setFont(&FreeSansBold12pt7b);
-    printAt(tx + tw + x1 + 12, tyBase, g_tm.tm_hour < 12 ? "AM" : "PM", GxEPD_RED);
+    printAt(x + 20 + tw + x1 + 12, tyBase, g_tm.tm_hour < 12 ? "AM" : "PM", GxEPD_RED);
   }
+  thickHLine(x, y + h - 3, w, 3, GxEPD_BLACK);
+}
 
+static void drawDateStatusBlock(int16_t x, int16_t y, int16_t w, int16_t h) {
   char buf[40];
   strftime(buf, sizeof(buf), "%A, %B %e", &g_tm);
   String dateStr(buf);
   dateStr.replace("  ", " ");
   display.setFont(&FreeSansBold18pt7b);
-  printRight(W - 20, 56, dateStr, GxEPD_BLACK);
+  printRight(x + w - 20, y + (int16_t)(h * 0.47f), dateStr, GxEPD_BLACK);
 
   display.setFont(&FreeSans9pt7b);
   String sub = "";
@@ -280,193 +325,286 @@ static void drawTopBand(int16_t W, int16_t bandH) {
   sub += "updated " + fmtClock(g_tm, true);
   bool anyStale = (!s_mailOk && g_set.imUser[0]) ||
                   (!s_calOk && strcmp(g_set.calMode, "none") != 0) || !s_wxOk;
-  printRight(W - 20, 88, sub, anyStale ? GxEPD_RED : GxEPD_BLACK);
-  if (!s_wifiOk) {
-    display.setFont(&FreeSansBold9pt7b);
-    printRight(W - 20, 110, "OFFLINE - showing last data", GxEPD_RED);
-  }
-  thickHLine(0, bandH - 3, W, 3, GxEPD_BLACK);
+  printRight(x + w - 20, y + (int16_t)(h * 0.75f), sub, anyStale ? GxEPD_RED : GxEPD_BLACK);
+
+  // tiny health/status line
+  display.setFont(nullptr);
+  String line = "";
+  if (g_set.imUser[0]) line += String("mail ") + (s_mailOk ? "ok" : "FAIL") + " ";
+  if (strcmp(g_set.calMode, "none") != 0) line += String("cal ") + (s_calOk ? "ok" : "FAIL") + " ";
+  line += String("wx ") + (s_wxOk ? "ok" : "FAIL");
+  if (!s_wifiOk) line = "OFFLINE - showing last data";
+  else if (g_lastIp[0]) line += String("  ") + g_lastIp + "  #" + String(g_bootCount);
+  int16_t lw = line.length() * 6;
+  display.setTextColor((!s_wifiOk || line.indexOf("FAIL") >= 0) ? GxEPD_RED : GxEPD_BLACK);
+  display.setCursor(x + w - 20 - lw, y + h - 14);
+  display.print(line);
+
+  thickHLine(x, y + h - 3, w, 3, GxEPD_BLACK);
 }
 
-static void drawWeather(int16_t leftW, int16_t bandH, int16_t H) {
-  int16_t x0 = 20;
+static void drawWeatherNowBlock(int16_t x, int16_t y, int16_t w, int16_t h) {
+  int16_t x0 = x + 20;
   if (!g_haveWx) {
     display.setFont(&FreeSans12pt7b);
-    printAt(x0, bandH + 60, s_wxOk ? "Weather..." : "Weather unavailable", GxEPD_BLACK);
+    printAt(x0, y + 60, s_wxOk ? "Weather..." : "Weather unavailable", GxEPD_BLACK);
     return;
   }
-  drawWeatherIcon(x0, bandH + 24, 84, g_wx.code, g_wx.isDay);
+  int16_t icon = 84;
+  if (icon > h - 40) icon = h - 40;
+  drawWeatherIcon(x0, y + 24, icon, g_wx.code, g_wx.isDay);
 
   char tbuf[8];
   snprintf(tbuf, sizeof(tbuf), "%d", g_wx.temp);
   display.setFont(&DashTempFont);
   int16_t x1, y1; uint16_t tw, th;
   display.getTextBounds(tbuf, 0, 0, &x1, &y1, &tw, &th);
-  int16_t tempX = x0 + 108, tempBase = bandH + 92;
+  int16_t tempX = x0 + icon + 24, tempBase = y + 92;
   printAt(tempX, tempBase, tbuf, GxEPD_BLACK);
   drawDegree(tempX + tw + x1 + 12, tempBase - 58, 6, GxEPD_RED);
 
   display.setFont(&FreeSansBold12pt7b);
-  printAt(x0, bandH + 148, fitStr(g_wx.cond, leftW - 40), GxEPD_BLACK);
+  printAt(x0, y + 148, fitStr(g_wx.cond, w - 40), GxEPD_BLACK);
 
-  char stats[56];
-  snprintf(stats, sizeof(stats), "Feels %d   RH %d%%   Wind %d %s",
-           g_wx.feels, g_wx.hum, g_wx.wind, strcmp(g_set.unitW, "kmh") == 0 ? "km/h" : "mph");
-  display.setFont(&FreeSans9pt7b);
-  printAt(x0, bandH + 176, stats, GxEPD_BLACK);
+  if (h >= 190) {
+    char stats[56];
+    snprintf(stats, sizeof(stats), "Feels %d   RH %d%%   Wind %d %s",
+             g_wx.feels, g_wx.hum, g_wx.wind, strcmp(g_set.unitW, "kmh") == 0 ? "km/h" : "mph");
+    display.setFont(&FreeSans9pt7b);
+    printAt(x0, y + 176, stats, GxEPD_BLACK);
+  }
+}
 
-  int16_t fcTop = H - 148;
-  thickHLine(16, fcTop - 10, leftW - 32, 1, GxEPD_BLACK);
-  int16_t colW = (leftW - 24) / 3;
+static void drawForecastBlock(int16_t x, int16_t y, int16_t w, int16_t h) {
+  if (!g_haveWx) return;
+  thickHLine(x + 16, y + 2, w - 32, 1, GxEPD_BLACK);
+  int16_t colW = (w - 24) / 3;
   for (int i = 0; i < 3; i++) {
-    int16_t cx = 12 + colW / 2 + i * colW;
+    int16_t cx = x + 12 + colW / 2 + i * colW;
     display.setFont(&FreeSansBold9pt7b);
-    printCentered(cx, fcTop + 16, g_wx.d[i].dow, (i == 0) ? GxEPD_RED : GxEPD_BLACK);
-    drawWeatherIcon(cx - 21, fcTop + 26, 42, g_wx.d[i].code, true);
+    printCentered(cx, y + 26, g_wx.d[i].dow, (i == 0) ? GxEPD_RED : GxEPD_BLACK);
+    drawWeatherIcon(cx - 21, y + 36, 42, g_wx.d[i].code, true);
     char hl[16];
     snprintf(hl, sizeof(hl), "%d / %d", g_wx.d[i].hi, g_wx.d[i].lo);
     display.setFont(&FreeSans9pt7b);
-    printCentered(cx, fcTop + 92, hl, GxEPD_BLACK);
-    if (g_wx.d[i].pop >= 30) {
+    printCentered(cx, y + 102, hl, GxEPD_BLACK);
+    if (g_wx.d[i].pop >= 30 && h >= 130) {
       char pp[8];
       snprintf(pp, sizeof(pp), "%d%%", g_wx.d[i].pop);
-      printCentered(cx, fcTop + 114, pp, GxEPD_RED);
+      printCentered(cx, y + 124, pp, GxEPD_RED);
     }
   }
 }
 
-static void drawCalendar(int16_t rx, int16_t W, int16_t bandH, int16_t sectY) {
+static void drawCalendarBlock(int16_t x, int16_t y, int16_t w, int16_t h) {
+  int16_t rx = x + 28;
   bool enabled = strcmp(g_set.calMode, "none") != 0;
-  sectionHeader(rx, bandH + 28, "CALENDAR", enabled && !s_calOk && g_haveCal);
+  sectionHeader(rx, y + 28, "CALENDAR", enabled && !s_calOk && g_haveCal);
 
   display.setFont(&FreeSans12pt7b);
   if (!enabled) {
-    printAt(rx, bandH + 78, "Calendar not configured", GxEPD_BLACK);
+    printAt(rx, y + 78, "Calendar not configured", GxEPD_BLACK);
     return;
   }
   if (!g_haveCal) {
-    printAt(rx, bandH + 78, s_calOk ? "No events" : "Calendar unavailable", GxEPD_BLACK);
+    printAt(rx, y + 78, s_calOk ? "No events" : "Calendar unavailable", GxEPD_BLACK);
     if (!s_calOk && s_calErr[0]) {
       display.setFont(&FreeSans9pt7b);
-      printAt(rx, bandH + 106, fitStr(s_calErr, W - rx - 24), GxEPD_RED);
+      printAt(rx, y + 106, fitStr(s_calErr, w - 52), GxEPD_RED);
     }
     return;
   }
   if (g_nEvents == 0) {
-    printAt(rx, bandH + 78, "No events today or tomorrow", GxEPD_BLACK);
+    printAt(rx, y + 78, "No events today or tomorrow", GxEPD_BLACK);
     return;
   }
-
-  int16_t y = bandH + 62;
+  int16_t yy = y + 62;
   bool tomorrowHdr = false;
   int16_t timeColW = 88;
   for (int i = 0; i < g_nEvents; i++) {
     EventT& e = g_events[i];
-    if (y > sectY - 14) break;
+    if (yy > y + h - 14) break;
     if (e.day == 1 && !tomorrowHdr) {
       display.setFont(&FreeSansBold9pt7b);
-      printAt(rx, y, "TOMORROW", GxEPD_BLACK);
-      thickHLine(rx, y + 8, 66, 2, GxEPD_RED);
-      y += 30;
+      printAt(rx, yy, "TOMORROW", GxEPD_BLACK);
+      thickHLine(rx, yy + 8, 66, 2, GxEPD_RED);
+      yy += 30;
       tomorrowHdr = true;
-      if (y > sectY - 14) break;
+      if (yy > y + h - 14) break;
     }
     bool nowEv = !e.allDay && e.day == 0 &&
                  (uint32_t)g_now >= e.ts0 && (uint32_t)g_now < e.ts1;
-    if (nowEv) display.fillRect(rx - 14, y - 18, 5, 24, GxEPD_RED);
+    if (nowEv) display.fillRect(rx - 14, yy - 18, 5, 24, GxEPD_RED);
     display.setFont(&FreeSansBold9pt7b);
-    printRight(rx + timeColW, y, e.when, nowEv ? GxEPD_RED : GxEPD_BLACK);
+    printRight(rx + timeColW, yy, e.when, nowEv ? GxEPD_RED : GxEPD_BLACK);
     display.setFont(&FreeSans12pt7b);
-    printAt(rx + timeColW + 14, y, fitStr(e.title, W - 20 - (rx + timeColW + 14)),
+    printAt(rx + timeColW + 14, yy, fitStr(e.title, x + w - 20 - (rx + timeColW + 14)),
             nowEv ? GxEPD_RED : GxEPD_BLACK);
-    y += 34;
+    yy += 34;
   }
 }
 
-static void drawInbox(int16_t rx, int16_t W, int16_t sectY, int16_t H) {
+static void drawInboxBlock(int16_t x, int16_t y, int16_t w, int16_t h) {
+  int16_t rx = x + 28;
   bool enabled = g_set.imUser[0] != 0;
-  thickHLine(rx - 24, sectY, W - (rx - 24) - 16, 1, GxEPD_BLACK);
-  sectionHeader(rx, sectY + 26, "INBOX", enabled && !s_mailOk && g_haveMail);
+  thickHLine(x + 4, y, w - 20, 1, GxEPD_BLACK);
+  sectionHeader(rx, y + 26, "INBOX", enabled && !s_mailOk && g_haveMail);
   if (enabled && g_haveMail && g_unread > 0) {
     char ub[20];
     snprintf(ub, sizeof(ub), "%s unread", g_unread > 99 ? "99+" : String(g_unread).c_str());
     display.setFont(&FreeSans9pt7b);
-    printRight(W - 16, sectY + 26, ub, GxEPD_RED);
+    printRight(x + w - 16, y + 26, ub, GxEPD_RED);
   }
-
   display.setFont(&FreeSans12pt7b);
   if (!enabled) {
-    printAt(rx, sectY + 70, "Email not configured", GxEPD_BLACK);
+    printAt(rx, y + 70, "Email not configured", GxEPD_BLACK);
     return;
   }
   if (!g_haveMail) {
-    printAt(rx, sectY + 70, s_mailOk ? "Checking..." : "Email unavailable", GxEPD_BLACK);
+    printAt(rx, y + 70, s_mailOk ? "Checking..." : "Email unavailable", GxEPD_BLACK);
     if (!s_mailOk && s_mailErr[0]) {
       display.setFont(&FreeSans9pt7b);
-      printAt(rx, sectY + 96, fitStr(s_mailErr, W - rx - 24), GxEPD_RED);
+      printAt(rx, y + 96, fitStr(s_mailErr, w - 52), GxEPD_RED);
     }
     return;
   }
   if (g_nEmails == 0) {
-    printAt(rx, sectY + 70, "Nothing needs attention", GxEPD_BLACK);
+    printAt(rx, y + 70, "Nothing needs attention", GxEPD_BLACK);
     return;
   }
-
-  int16_t y = sectY + 52;          // tight rows: 4 emails fit under the split
+  int16_t yy = y + 52;
   int16_t senderW = 150;
   for (int i = 0; i < g_nEmails; i++) {
-    if (y > H - 6) break;
+    if (yy > y + h - 6) break;
     EmailT& e = g_emails[i];
-    display.fillCircle(rx + 4, y - 5, 4, GxEPD_RED);
+    display.fillCircle(rx + 4, yy - 5, 4, GxEPD_RED);
     display.setFont(&FreeSansBold9pt7b);
-    printAt(rx + 16, y, fitStr(e.from, senderW), GxEPD_BLACK);
+    printAt(rx + 16, yy, fitStr(e.from, senderW), GxEPD_BLACK);
     display.setFont(&FreeSans9pt7b);
     int16_t sx = rx + 16 + senderW + 12;
-    printAt(sx, y, fitStr(e.subj, W - 62 - sx), GxEPD_BLACK);
-    printRight(W - 14, y, shortAge(e.ts), GxEPD_BLACK);
-    y += 22;
+    printAt(sx, yy, fitStr(e.subj, x + w - 62 - sx), GxEPD_BLACK);
+    printRight(x + w - 14, yy, shortAge(e.ts), GxEPD_BLACK);
+    yy += 22;
   }
 }
 
-static void drawStatusLine(int16_t leftW, int16_t H) {
-  // Lives entirely inside the weather column so it never crowds the
-  // calendar/inbox column. Optional segments are dropped if space runs out.
-  display.setFont(nullptr);   // classic 6x8 font (cursor = top-left)
-  String line = "";
-  if (g_set.imUser[0]) line += String("mail ") + (s_mailOk ? "ok" : "FAIL");
-  if (strcmp(g_set.calMode, "none") != 0) {
-    if (line.length()) line += " | ";
-    line += String("cal ") + (s_calOk ? "ok" : "FAIL");
+// ---------------- contributed-block widgets ----------------
+static void drawContribBlock(const BlockDef& def, const BlockData& d,
+                             int16_t x, int16_t y, int16_t w, int16_t h) {
+  int16_t cy = y + 6;
+  if (def.title[0]) {
+    display.setFont(&FreeSansBold9pt7b);
+    printAt(x + 12, y + 24, def.title, GxEPD_BLACK);
+    thickHLine(x + 12, y + 32, textWidth(def.title), 3,
+               def.accentRed ? GxEPD_RED : GxEPD_BLACK);
+    cy = y + 40;
   }
-  if (line.length()) line += " | ";
-  line += String("wx ") + (s_wxOk ? "ok" : "FAIL");
-
-  int16_t maxW = leftW - 26;
-  String ipSeg = g_lastIp[0] ? String(" | ") + g_lastIp : String("");
-  String bootSeg = String(" | #") + String(g_bootCount);
-  if (textWidth(line + ipSeg + bootSeg) <= (uint16_t)maxW) line += ipSeg + bootSeg;
-  else if (textWidth(line + ipSeg) <= (uint16_t)maxW) line += ipSeg;
-
-  bool anyFail = line.indexOf("FAIL") >= 0;
-  display.setTextColor(anyFail ? GxEPD_RED : GxEPD_BLACK);
-  display.setCursor(16, H - 12);
-  display.print(line);
+  if (!d.ok) {
+    display.setFont(&FreeSans9pt7b);
+    printAt(x + 12, cy + 22, fitStr(d.err[0] ? d.err : "no data yet", w - 24), GxEPD_RED);
+    return;
+  }
+  char buf[96];
+  switch (def.widget) {
+    case BW_BIG_NUMBER: {
+      if (def.wLabel[0] && !def.title[0]) {
+        display.setFont(&FreeSansBold9pt7b);
+        printAt(x + 12, cy + 18, def.wLabel, GxEPD_BLACK);
+        cy += 22;
+      }
+      blockTemplate(def.wValue, d, buf, sizeof(buf));
+      display.setFont(&DashTempFont);
+      String v(buf);
+      if (y + h - cy < 76) {                    // short block: compact value
+        display.setFont(&FreeSansBold18pt7b);
+        printAt(x + 12, cy + 28, fitStr(v, w - 24), def.accentRed ? GxEPD_RED : GxEPD_BLACK);
+        break;
+      }
+      if (textWidth(v) > (uint16_t)(w - 24)) {
+        display.setFont(&FreeSansBold18pt7b);   // fall back for long values
+        if (textWidth(v) > (uint16_t)(w - 24)) v = fitStr(v, w - 24);
+        printAt(x + 12, cy + 40, v, def.accentRed ? GxEPD_RED : GxEPD_BLACK);
+        cy += 48;
+      } else {
+        printAt(x + 12, cy + 58, v, def.accentRed ? GxEPD_RED : GxEPD_BLACK);
+        cy += 68;
+      }
+      if (def.wSub[0] && cy + 20 <= y + h) {
+        blockTemplate(def.wSub, d, buf, sizeof(buf));
+        display.setFont(&FreeSans9pt7b);
+        printAt(x + 12, cy + 14, fitStr(buf, w - 24), GxEPD_BLACK);
+      }
+      break;
+    }
+    case BW_LIST: {
+      int16_t yy = cy + 18;
+      for (int i = 0; i < d.nRows; i++) {
+        if (yy > y + h - 6) break;
+        display.fillCircle(x + 16, yy - 5, 3, def.accentRed ? GxEPD_RED : GxEPD_BLACK);
+        display.setFont(&FreeSans9pt7b);
+        int16_t secW = d.rows[i].secondary[0] ? 52 : 0;
+        printAt(x + 26, yy, fitStr(d.rows[i].primary, w - 40 - secW), GxEPD_BLACK);
+        if (secW) printRight(x + w - 12, yy, d.rows[i].secondary, GxEPD_BLACK);
+        yy += 22;
+      }
+      break;
+    }
+    case BW_BAR: {
+      blockTemplate(def.wValue, d, buf, sizeof(buf));
+      float v = atof(buf);
+      if (def.wLabel[0]) {
+        display.setFont(&FreeSansBold9pt7b);
+        printAt(x + 12, cy + 18, def.wLabel, GxEPD_BLACK);
+      }
+      int16_t bw = w - 24, bx = x + 12, by = cy + 28;
+      display.drawRect(bx, by, bw, 16, GxEPD_BLACK);
+      float frac = def.barMax > 0 ? v / def.barMax : 0;
+      if (frac < 0) frac = 0;
+      if (frac > 1) frac = 1;
+      display.fillRect(bx + 2, by + 2, (int16_t)((bw - 4) * frac), 12,
+                       def.accentRed ? GxEPD_RED : GxEPD_BLACK);
+      display.setFont(&FreeSans9pt7b);
+      printRight(x + w - 12, cy + 62, buf, GxEPD_BLACK);
+      break;
+    }
+    default: {  // BW_TEXT
+      blockTemplate(def.wSub[0] ? def.wSub : def.wValue, d, buf, sizeof(buf));
+      display.setFont(&FreeSans12pt7b);
+      printAt(x + 12, cy + 26, fitStr(buf, w - 24), GxEPD_BLACK);
+      break;
+    }
+  }
 }
 
 static void drawAll() {
   int16_t W = display.width(), H = display.height();
-  int16_t bandH = 118;
-  int16_t leftW = (int16_t)((int32_t)W * 37 / 100);
-  int16_t rx = leftW + 28;
-  int16_t sectY = bandH + (int16_t)((H - bandH) * 13 / 20);
+  int16_t cw = W / 16, chh = H / 12;
 
   display.fillScreen(GxEPD_WHITE);
-  drawTopBand(W, bandH);
-  display.fillRect(leftW, bandH, 2, H - bandH, GxEPD_BLACK);
-  drawWeather(leftW, bandH, H);
-  drawCalendar(rx, W, bandH, sectY);
-  drawInbox(rx, W, sectY, H);
-  drawStatusLine(leftW, H);
+  for (JsonObjectConst it : s_layoutDoc.as<JsonArrayConst>()) {
+    const char* id = it["block"] | "";
+    int16_t bx = (int16_t)(it["x"] | 0) * cw, by = (int16_t)(it["y"] | 0) * chh;
+    int16_t bw = (int16_t)(it["w"] | 1) * cw, bh = (int16_t)(it["h"] | 1) * chh;
+    if (!strcmp(id, "core-clock")) drawClockBlock(bx, by, bw, bh);
+    else if (!strcmp(id, "core-datestatus")) drawDateStatusBlock(bx, by, bw, bh);
+    else if (!strcmp(id, "core-weather")) drawWeatherNowBlock(bx, by, bw, bh);
+    else if (!strcmp(id, "core-forecast")) drawForecastBlock(bx, by, bw, bh);
+    else if (!strcmp(id, "core-calendar")) drawCalendarBlock(bx, by, bw, bh);
+    else if (!strcmp(id, "core-inbox")) drawInboxBlock(bx, by, bw, bh);
+    else {
+      const char* inst = it["inst"] | "";
+      for (int i = 0; i < s_nContrib; i++)
+        if (!strcmp(s_contrib[i].inst, inst)) {
+          if (s_contrib[i].loaded)
+            drawContribBlock(s_contrib[i].def, s_contrib[i].data, bx, by, bw, bh);
+          else {
+            display.setFont(&FreeSans9pt7b);
+            printAt(bx + 12, by + 24, "block missing", GxEPD_RED);
+          }
+          break;
+        }
+    }
+  }
   if (!s_wifiOk)
     for (int i = 0; i < 3; i++) display.drawRect(i, i, W - 2 * i, H - 2 * i, GxEPD_RED);
 }
@@ -617,6 +755,81 @@ static void fetchAll() {
   } else {
     Serial.printf("WX fail: %s\n", w.msg);
   }
+
+  // contributed blocks (declarative fetch, SSRF-guarded, size-capped)
+  for (int i = 0; i < s_nContrib; i++) {
+    ContribSlot& s = s_contrib[i];
+    if (!s.loaded) continue;
+    Serial.printf("fetch: block %s (heap %u)\n", s.def.id, (unsigned)ESP.getFreeHeap());
+    JsonObjectConst params = s_layoutDoc[s.layoutIdx]["params"];
+    if (!blockFetch(s.def, params, s.data))
+      Serial.printf("block %s: %s\n", s.def.id, s.data.err);
+  }
+}
+
+// ---------------- portal preview (sample data on the real panel) ----------------
+static void initDisplay();   // defined below (forward decl for host builds)
+
+static void fillSampleGlobals() {
+  g_now = 1784738700;   // Wed 2026-07-22 09:45 PDT — a nice-looking sample
+  localtime_r(&g_now, &g_tm);
+  g_haveWx = 1;
+  g_wx.temp = 26; g_wx.feels = 27; g_wx.hum = 52; g_wx.wind = 6;
+  g_wx.code = 2; g_wx.isDay = 1;
+  strlcpy(g_wx.cond, "Partly cloudy", sizeof(g_wx.cond));
+  const char* dows[3] = {"Today", "Thu", "Fri"};
+  int his[3] = {29, 27, 25}, los[3] = {18, 17, 16}, codes[3] = {1, 2, 61}, pops[3] = {0, 10, 55};
+  for (int i = 0; i < 3; i++) {
+    strlcpy(g_wx.d[i].dow, dows[i], sizeof(g_wx.d[i].dow));
+    g_wx.d[i].hi = his[i]; g_wx.d[i].lo = los[i];
+    g_wx.d[i].code = codes[i]; g_wx.d[i].pop = pops[i];
+  }
+  g_haveCal = 1; g_nEvents = 3;
+  auto ev = [&](int i, const char* t, const char* wh, uint32_t a, uint32_t b, int day, int ad) {
+    strlcpy(g_events[i].title, t, sizeof(g_events[i].title));
+    strlcpy(g_events[i].when, wh, sizeof(g_events[i].when));
+    g_events[i].ts0 = a; g_events[i].ts1 = b; g_events[i].day = day; g_events[i].allDay = ad;
+  };
+  ev(0, "Team standup", "9:30 AM", 1784737800, 1784739600, 0, 0);
+  ev(1, "Lunch with Sarah", "12:00 PM", 1784746800, 1784750400, 0, 0);
+  ev(2, "Building inspection", "all day", 1784790000, 1784876400, 1, 1);
+  g_haveMail = 1; g_unread = 7; g_nEmails = 3;
+  auto em = [&](int i, const char* f, const char* su, uint32_t ts) {
+    strlcpy(g_emails[i].from, f, sizeof(g_emails[i].from));
+    strlcpy(g_emails[i].subj, su, sizeof(g_emails[i].subj));
+    g_emails[i].ts = ts;
+  };
+  em(0, "Sarah Chen", "Re: lunch today?", g_now - 720);
+  em(1, "GitHub", "[epaper-dash] PR #14 merged", g_now - 4500);
+  em(2, "Migadu Status", "Maintenance window Sunday", g_now - 11700);
+  s_mailOk = s_calOk = s_wxOk = s_wifiOk = true;
+  strlcpy(g_lastIp, "192.168.1.57", sizeof(g_lastIp));
+}
+
+static void portalPreviewRender() {
+  // Prefer REAL data: after a refresh cycle (LAN editor window) the caches
+  // hold live mail/calendar/weather; in settings mode the RTC cache from the
+  // last successful cycle usually survives too. Sample data is the fallback.
+  bool haveReal = timeIsValid() && (g_haveWx || g_haveCal || g_haveMail);
+  Serial.printf("portal: preview render (%s data)\n", haveReal ? "real" : "sample");
+  if (haveReal) {
+    g_now = time(nullptr);
+    localtime_r(&g_now, &g_tm);
+  } else {
+    fillSampleGlobals();
+  }
+  s_mailOk = s_calOk = s_wxOk = s_wifiOk = true;   // previews never show FAIL flags
+  prepareLayout();
+  for (int i = 0; i < s_nContrib; i++)
+    if (s_contrib[i].loaded && !s_contrib[i].data.ok)
+      blockSampleData(s_contrib[i].def, s_contrib[i].data);
+  initDisplay();
+  display.setFullWindow();
+  display.firstPage();
+  do {
+    drawAll();
+  } while (display.nextPage());
+  display.hibernate();
 }
 
 static void goToSleep() {
@@ -654,6 +867,9 @@ static void goToSleep() {
 }
 
 static void initDisplay() {
+  static bool inited = false;
+  if (inited) return;             // portal may render more than once
+  inited = true;
   hspi.begin(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS);
   display.epd2.selectSPI(hspi, SPISettings(4000000, MSBFIRST, SPI_MODE0));
   display.init(115200);
@@ -703,6 +919,8 @@ void setup() {
 
   bool buttonHeld = setupButtonRequested();
   bool haveConfig = settingsLoad();
+  fsStoreBegin();
+  prepareLayout();
 
   if (buttonHeld || !haveConfig || g_wifiFails >= FAILS_BEFORE_PORTAL) {
     PortalReason why = buttonHeld ? PORTAL_BUTTON
@@ -710,6 +928,7 @@ void setup() {
     g_wifiFails = 0;
     initDisplay();
     drawSetupScreen(why);
+    portalSetPreviewHook(portalPreviewRender);
     portalRun(why);   // never returns (reboots on finish)
     return;
   }
@@ -730,8 +949,16 @@ void setup() {
     strlcpy(s_calErr, "no WiFi", sizeof(s_calErr));
     Serial.printf("WiFi failed (%d in a row)\n", g_wifiFails);
   }
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
+
+  // A MANUAL reset (RST tap / power-on — not a deep-sleep timer wake) opens
+  // the LAN editor window after the refresh: the portal UI stays reachable
+  // at the device's LAN IP / epaper-dashboard.local while real data is
+  // loaded, then the device goes back to sleep. Timer wakes skip this.
+  bool editorWindow = (rr != ESP_RST_DEEPSLEEP) && s_wifiOk;
+  if (!editorWindow) {
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+  }
 
   g_now = time(nullptr);
   localtime_r(&g_now, &g_tm);
@@ -752,6 +979,13 @@ void setup() {
     g_renderCrashes = 0;
   }
   Serial.println("cycle complete");
+
+  if (editorWindow) {
+    portalSetPreviewHook(portalPreviewRender);
+    portalServeLan(5 * 60 * 1000UL, 30 * 60 * 1000UL);   // 5 min idle, 30 min cap
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+  }
   goToSleep();
 }
 

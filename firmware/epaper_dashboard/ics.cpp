@@ -5,10 +5,12 @@
 
 // ---------------- parser ----------------
 
-// Shared raw-event storage (.bss, not stack): see note in ics.h.
-static VEvent s_rawStore[ICS_MAX_RAW];
+// Shared raw-event storage — heap-allocated once (not stack: would overflow
+// the 8 KB loop task; not .bss: the ESP32 dram0 static segment is scarce).
+static VEvent* s_rawStore = nullptr;
 
 void IcsParser::begin(time_t winStart, time_t winEnd) {
+  if (!s_rawStore) s_rawStore = new VEvent[ICS_MAX_RAW];
   events = s_rawStore;
   ws_ = winStart;
   we_ = winEnd;
