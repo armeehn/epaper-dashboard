@@ -36,9 +36,17 @@ other preset for your size (e.g. `PANEL_75_B_V2` vs `PANEL_75_B_V1`).
 hotspot hops to your router's channel. Stay on the setup WiFi; the page
 retries by itself.
 
-**IMAP test fails with "login rejected"** — Migadu/mailbox.org: full address +
-normal password. Fastmail/Gmail/iCloud: you need an app password.
-Outlook.com/Hotmail cannot work (OAuth-only — see [SETUP.md](SETUP.md)).
+**IMAP test fails with "login rejected"** — check the note under the password
+field: several providers (Fastmail, Gmail, iCloud, Yahoo, AOL, Yandex,
+StartMail) need an **app password**, not your normal one. Others (Migadu,
+mailbox.org, Posteo) take the full address and the normal password. Microsoft,
+Proton and Tuta cannot work at all — see [SETUP.md](SETUP.md).
+
+**"Detect" finds no IMAP server** — it tries `imap.`, `mail.`, the bare domain,
+`imap4.` and `secure.` on port 993 and lists what it tried. If your provider
+uses something else, put the host in *Advanced*; the address it appears under
+is usually in your provider's "IMAP settings" help page. Detection needs the
+WiFi step finished first, since it runs from the device.
 
 **"Find my calendars" finds nothing** — paste the full calendar URL into the
 server field (from your calendar app's settings), or switch to an ICS link.
@@ -54,6 +62,15 @@ single-slot `huge_app` table. Do the one-time USB migration (keeps settings):
 
 **Compile error "text section exceeds available space"** — you skipped the
 **Minimal SPIFFS (1.9MB APP with OTA)** partition scheme in Tools.
+
+**`registry/` is empty / host tests refuse to start** — the block registry is
+a git submodule. Run `git submodule update --init` (or clone with
+`--recurse-submodules`).
+
+**A block shows "signature not trusted"** — the registry is signed by a key
+your firmware does not have in `trusted_keys.h`. Either use the official
+registry, or add your key and reflash; the unsigned-blocks toggle in the Blocks
+tab is for local development only.
 
 **`epaper-dashboard.local` doesn't resolve** — some networks block mDNS; use
 the IP shown in the dashboard footer instead (give it a DHCP reservation).

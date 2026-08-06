@@ -7,7 +7,8 @@
    `EPaper-Dashboard`, then open `http://192.168.4.1`*. On phones the page
    usually pops up by itself (captive portal).
 3. **Answer the wizard's questions.** It walks WiFi → email → calendar →
-   weather → clock & refresh, and **tests every step live on the device**: it
+   weather → clock & refresh → store, and **tests every step live on the
+   device**: it
    scans and joins your WiFi (staying reachable through its own hotspot), logs
    into IMAP and shows your newest matching message, discovers and lists your
    CalDAV calendars to pick from, geocodes your city, and suggests a timezone.
@@ -42,27 +43,54 @@
 The portal also reopens automatically after 5 consecutive failed WiFi cycles,
 so a changed router password can't strand the display.
 
-## Email providers
+## Email and calendar providers
 
-The wizard has presets that fill in every server detail:
+The device speaks plain IMAP and plain CalDAV with no vendor APIs, so **any
+server implementing them works**. The wizard's dropdowns are conveniences on
+top of that, not the supported set.
 
-| Provider | IMAP | Password | CalDAV |
-| --- | --- | --- | --- |
-| **Migadu** | `imap.migadu.com` | normal mailbox password | `cdav.migadu.com` — "Find my calendars" lists yours |
-| **Fastmail** | `imap.fastmail.com` | app password (Settings → Privacy & Security) | `caldav.fastmail.com` |
-| **Gmail** | `imap.gmail.com` | app password (2-Step Verification required) | use the ICS "secret address" instead |
-| **iCloud Mail** | `imap.mail.me.com` | app-specific password (appleid.apple.com) | `caldav.icloud.com` |
-| **mailbox.org** | `imap.mailbox.org` | normal password (app password with 2FA) | `dav.mailbox.org` |
-| **Other / custom** | any standard IMAP server | — | any SabreDAV / Radicale / Baïkal / Nextcloud server, or an ICS link |
+**Email.** Type your address first: if the domain is a known one the provider
+is selected and every server detail filled in — Migadu, Fastmail, Gmail /
+Workspace, iCloud, mailbox.org, Posteo, Zoho, Yahoo, AOL, Yandex, GMX, WEB.DE,
+Purelymail and StartMail all ship as presets, each with a note saying what the
+password actually is (several require an app password).
+
+For anything else — your own Dovecot, shared hosting, a provider nobody has
+added — press **Detect**. The device connects to `imap.`, `mail.`, the bare
+domain, `imap4.` and `secure.` in turn and reports the first that answers with
+an IMAP greeting. No password is sent while detecting; only public DNS names
+are tried, so it cannot be aimed at your LAN. Failing that, fill in the host
+under *Advanced*.
+
+**Calendar** is chosen independently of email, so you can read one provider's
+mail and another's calendar. Presets cover the same providers plus Nextcloud /
+ownCloud, Baïkal, Radicale, Synology and Zimbra. For anything else, enter the
+server's URL: the device follows `/.well-known/caldav` to your calendar list,
+so the plain domain is usually enough, and *Find my calendars* lists what it
+found.
 
 > [!NOTE]
-> **Outlook.com / Hotmail can't work**: Microsoft has switched personal
-> accounts to OAuth-only and removed app passwords for IMAP, which a
-> standalone device can't use. Point the calendar at a published ICS link if
-> you need Outlook events; use any other provider for mail.
+> **Some providers cannot work at all**, and the wizard says so rather than
+> half-working. Microsoft (Outlook.com, Hotmail, Microsoft 365) has withdrawn
+> password logins for IMAP in favour of OAuth2, which a standalone device
+> cannot do. Proton exposes IMAP only through Proton Mail Bridge on a
+> computer. Tuta has no IMAP at all. For calendars, Google and Microsoft both
+> work fine through a published **ICS link**.
 
-Self-hosted works naturally — Dovecot for mail, Radicale/Baïkal/Nextcloud for
-CalDAV — since the device speaks the plain protocols with no vendor APIs.
+## The store
+
+The last wizard step offers optional blocks — extra tiles like air quality,
+sunrise and sunset, a stock price or the Hacker News front page — from the signed registry
+at [armeehn/epaper-blocks](https://github.com/armeehn/epaper-blocks). Browse by
+category, install what you want, and arrange it later in the **Layout** tab.
+The step is entirely skippable, and the same catalogue is available any time
+from the **Blocks** tab.
+
+Each block's signature is checked against the keys compiled into the firmware
+before anything is stored, and a block is data rather than code — see
+[DESIGN.md](../DESIGN.md) for what one can and cannot do. Pointing the store at
+a different registry is a runtime setting; trusting a different signing key
+needs a reflash.
 
 ## Everyday behavior
 

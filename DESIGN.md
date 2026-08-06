@@ -32,7 +32,9 @@ placed and moved on the same grid as contributed blocks.
 
 ## Layout
 
-The 800×480 panel is a **16 × 12 grid** (50 × 40 px cells). A layout is a
+Every panel is a **16 × 12 grid** (`GRID_COLS` × `GRID_ROWS`), so cell pixels
+follow the resolution — 50 × 40 px on an 800×480 panel — and a layout is
+portable between devices. A layout is a
 list of placed block instances: `{instance id, block id, x, y, w, h, params}`.
 The web portal's **Layout** tab is a drag-and-drop editor: drag tiles to move,
 drag the corner handle to resize, click a tile to edit its parameters (the
@@ -68,8 +70,9 @@ gains native Ed25519.
 
 ### The contrib workflow (the i3blocks-contrib part)
 
-A community repo, `registry/` in this project (intended to become its own
-GitHub repo):
+The community repo is
+[armeehn/epaper-blocks](https://github.com/armeehn/epaper-blocks), vendored
+here as the `registry/` submodule:
 
 - One directory per block: `blocks/<name>/block.json` + README + screenshot.
 - Contributors open a PR. Review is *feasible* because a block is ~40 lines
@@ -83,9 +86,11 @@ GitHub repo):
   this repo's), or install a single `.epb` by URL or paste. The UI shows the
   signature status and signing key for every installed block.
 
-`tools/block_sign.py` does keygen / sign / verify / make-index, so a fork can
+`registry/tools/block_sign.py` does keygen / sign / verify / make-index, and
+`registry/tools/validate_blocks.py` enforces the review checklist, so a fork can
 run its own registry with its own key — federation by construction: the
-firmware trusts whatever keys its owner bakes in.
+firmware trusts whatever keys its owner bakes in. The full field reference is
+`registry/BLOCK_SPEC.md`.
 
 ## Threat model (what can a hostile block do?)
 

@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a change to the firmware, portal or tooling
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Extra things to *show* on the panel are usually blocks, not firmware —
+        those go to [epaper-blocks](https://github.com/armeehn/epaper-blocks).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation, not the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like it to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part?
+      options:
+        - Setup wizard / portal UI
+        - Panel or board support
+        - Email (IMAP)
+        - Calendar (CalDAV / ICS)
+        - Weather
+        - Blocks engine
+        - Build, CI or tooling
+        - Something else
+    validations:
+      required: true
+  - type: checkboxes
+    id: hardware
+    attributes:
+      label: Verification
+      options:
+        - label: This can be verified without hardware, or I can explain how to structure it so the logic is host-testable

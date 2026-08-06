@@ -10,8 +10,10 @@ __pycache__/
 node_modules/
 .DS_Store
 
-# real signing keys never belong in git — wherever they land. block_sign.py
+# private signing keys never belong in git, wherever they land — block_sign.py
 # keygen writes into the current directory, which is often the repo root.
-# the demo key is the documented, intentionally-public exception.
 *.key
-!registry/keys/demo-registry.key
+# keygen drops the public half beside it; the copy that matters is the one
+# pasted into firmware/epaper_dashboard/trusted_keys.h, so root-level scratch
+# is ignored rather than committed by accident.
+/*.pub.pem
