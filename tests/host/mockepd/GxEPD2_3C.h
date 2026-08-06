@@ -6,9 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifndef GxEPD_WHITE
 #define GxEPD_WHITE 0xFFFF
 #define GxEPD_BLACK 0x0000
 #define GxEPD_RED   0xF800
+#endif
 
 class GxEPD2_750c_Z08 {
  public:
@@ -26,6 +28,18 @@ class GxEPD2_750c_Z90 {
  public:
   static const uint16_t WIDTH = 880, HEIGHT = 528;
   GxEPD2_750c_Z90(int16_t, int16_t, int16_t, int16_t) {}
+  void selectSPI(SPIClass&, SPISettings) {}
+};
+class GxEPD2_583c_Z83 {
+ public:
+  static const uint16_t WIDTH = 648, HEIGHT = 480;
+  GxEPD2_583c_Z83(int16_t, int16_t, int16_t, int16_t) {}
+  void selectSPI(SPIClass&, SPISettings) {}
+};
+class GxEPD2_420c {
+ public:
+  static const uint16_t WIDTH = 400, HEIGHT = 300;
+  GxEPD2_420c(int16_t, int16_t, int16_t, int16_t) {}
   void selectSPI(SPIClass&, SPISettings) {}
 };
 
