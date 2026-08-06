@@ -1,18 +1,17 @@
 /*
- * E-Paper Dashboard — turn-key edition
+ * E-Paper Dashboard v2 — turn-key edition
  * ----------------------------------------------------------------------
- * ESP32 + any GxEPD2-supported SPI e-paper panel (pick panel & wiring in
- * config.h). First boot (or BOOT held after reset, or repeated failures)
- * opens a captive-portal setup wizard (Bootstrap UI at http://192.168.4.1
- * on the "EPaper-Dashboard" WiFi). The wizard configures WiFi, IMAP
- * email, CalDAV/ICS calendar, weather, clock and refresh — testing each
- * live — then the device runs the dashboard loop: wake → fetch (IMAP +
- * CalDAV/ICS + Open-Meteo + blocks) → render → deep sleep. Last-good
- * data survives in RTC memory; failures are flagged per section instead
- * of blanking the screen.
+ * ESP32 + Waveshare 7.5" tri-color panel. First boot (or BOOT held at
+ * reset, or repeated failures) opens a captive-portal setup wizard
+ * (Bootstrap UI at http://192.168.4.1 on the "EPaper-Dashboard" WiFi).
+ * The wizard configures WiFi, IMAP email, CalDAV/ICS calendar, weather,
+ * clock and refresh — testing each live — then the device runs the
+ * dashboard loop: wake → fetch (IMAP + CalDAV/ICS + Open-Meteo) →
+ * render → deep sleep. Last-good data survives in RTC memory; failures
+ * are flagged per section instead of blanking the screen.
  *
  * Libraries (Library Manager): GxEPD2 (+deps), ArduinoJson v7.
- * Board: "ESP32 Dev Module". Partition scheme: "Minimal SPIFFS" (OTA).
+ * Board: "ESP32 Dev Module". Partition scheme: "Huge APP".
  */
 
 #include "config.h"
@@ -30,7 +29,6 @@
 #include <sys/time.h>
 #include <esp_system.h>   // esp_reset_reason()
 
-#include <GxEPD2_BW.h>
 #include <GxEPD2_3C.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold9pt7b.h>
@@ -41,32 +39,20 @@
 #include "TempFont.h"    // DejaVu Serif Bold digits (generated)
 
 // ---------------- display ----------------
-// The panel preset in config.h resolves to a GxEPD2 driver class
-// (EPD_DRIVER) and a color capability flag (EPD_IS_3C). Rendering is
-// paged in two half-screen passes so the framebuffer fits static RAM
-// on every supported resolution.
-#if !defined(EPD_DRIVER)
+#if defined(PANEL_75_B_V2)
+GxEPD2_3C<GxEPD2_750c_Z08, GxEPD2_750c_Z08::HEIGHT / 2>
+  display(GxEPD2_750c_Z08(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));   // 800x480
+#elif defined(PANEL_75_B_V1)
+GxEPD2_3C<GxEPD2_750c, GxEPD2_750c::HEIGHT / 2>
+  display(GxEPD2_750c(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));       // 640x384
+#elif defined(PANEL_75_HD_B)
+GxEPD2_3C<GxEPD2_750c_Z90, GxEPD2_750c_Z90::HEIGHT / 2>
+  display(GxEPD2_750c_Z90(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));   // 880x528
+#else
 #error "Select a panel in config.h"
 #endif
-#if EPD_IS_3C
-GxEPD2_3C<EPD_DRIVER, EPD_DRIVER::HEIGHT / 2>
-  display(EPD_DRIVER(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
-#else
-GxEPD2_BW<EPD_DRIVER, EPD_DRIVER::HEIGHT / 2>
-  display(EPD_DRIVER(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
-// On black&white panels GxEPD2 draws any non-black color as white, which
-// would make the red accents invisible — fold every red to black instead.
-// (Zero changes needed at the ~50 call sites: GxEPD_RED is a macro.)
-#undef GxEPD_RED
-#define GxEPD_RED GxEPD_BLACK
-#endif
 
-#if defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3) || \
-    defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32C6)
-SPIClass hspi(FSPI);   // single/renamed SPI host on S2/S3/C3/C6
-#else
 SPIClass hspi(HSPI);
-#endif
 
 // ---------------- cached state (survives deep sleep) ----------------
 RTC_DATA_ATTR EventT   g_events[MAXE];
@@ -311,22 +297,10 @@ static String fmtClock(const struct tm& t, bool withAmPm) {
 // Every renderer draws into its own rect (x, y, w, h in pixels).
 
 static void drawClockBlock(int16_t x, int16_t y, int16_t w, int16_t h) {
-  String timeStr = fmtClock(g_tm, false);
-  // Adaptive size: the big DejaVu digits are sized for ~350 px of width
-  // (7 grid columns on 800x480). On smaller panels or narrower blocks,
-  // step down so the time never spills out of its block.
-  int16_t x1, y1; uint16_t tw, th;
   display.setFont(&DashClockFont);
+  String timeStr = fmtClock(g_tm, false);
+  int16_t x1, y1; uint16_t tw, th;
   display.getTextBounds(timeStr, 0, 0, &x1, &y1, &tw, &th);
-  int16_t amRoom = g_set.h24 ? 0 : 64;
-  if ((int16_t)tw + 20 + amRoom > w) {
-    display.setFont(&DashTempFont);          // mid-size DejaVu digits
-    display.getTextBounds(timeStr, 0, 0, &x1, &y1, &tw, &th);
-    if ((int16_t)tw + 20 + amRoom > w) {
-      display.setFont(&FreeSansBold18pt7b);  // last resort, always fits
-      display.getTextBounds(timeStr, 0, 0, &x1, &y1, &tw, &th);
-    }
-  }
   int16_t tyBase = y + h - 14;
   printAt(x + 20, tyBase, timeStr, GxEPD_BLACK);
   if (!g_set.h24) {
@@ -638,34 +612,29 @@ static void drawAll() {
 // ---------------- setup-mode screen ----------------
 static void drawSetupScreen(PortalReason reason) {
   int16_t W = display.width(), H = display.height();
-  // Vertical positions scale with panel height (fractions chosen so the
-  // classic 800x480 layout is pixel-identical); fonts are fixed-size.
-  int16_t step = (int16_t)((int32_t)H * 96 / 480);
-  int16_t hOff = (int16_t)((int32_t)H * 44 / 480);
   display.setFullWindow();
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
     thickHLine(0, 0, W, 8, GxEPD_RED);
     display.setFont(&FreeSansBold18pt7b);
-    printCentered(W / 2, (int16_t)((int32_t)H * 70 / 480), "Let's set up your dashboard", GxEPD_BLACK);
+    printCentered(W / 2, 70, "Let's set up your dashboard", GxEPD_BLACK);
     display.setFont(&FreeSans12pt7b);
     const char* why =
       (reason == PORTAL_BUTTON) ? "(setup button held - settings mode)" :
       (reason == PORTAL_FAILURES) ? "(couldn't reach WiFi - please reconfigure)" :
       "(first boot)";
-    printCentered(W / 2, (int16_t)((int32_t)H * 102 / 480), why,
-                  (reason == PORTAL_FAILURES) ? GxEPD_RED : GxEPD_BLACK);
+    printCentered(W / 2, 102, why, (reason == PORTAL_FAILURES) ? GxEPD_RED : GxEPD_BLACK);
 
-    int16_t y = (int16_t)((int32_t)H * 170 / 480), x = (int16_t)((int32_t)W * 90 / 800);
+    int16_t y = 170, x = 90;
     display.setFont(&FreeSansBold12pt7b);
     printAt(x, y, "1.", GxEPD_RED);
     display.setFont(&FreeSans12pt7b);
     printAt(x + 34, y, "On your phone or laptop, join the WiFi network:", GxEPD_BLACK);
     display.setFont(&FreeSansBold18pt7b);
-    printCentered(W / 2, y + hOff, PORTAL_AP_NAME, GxEPD_BLACK);
+    printCentered(W / 2, y + 44, PORTAL_AP_NAME, GxEPD_BLACK);
 
-    y += step;
+    y += 96;
     display.setFont(&FreeSansBold12pt7b);
     printAt(x, y, "2.", GxEPD_RED);
     display.setFont(&FreeSans12pt7b);
@@ -674,9 +643,9 @@ static void drawSetupScreen(PortalReason reason) {
     char apUrl[28];
     snprintf(apUrl, sizeof(apUrl), "http://%d.%d.%d.%d",
              PORTAL_AP_IP1, PORTAL_AP_IP2, PORTAL_AP_IP3, PORTAL_AP_IP4);
-    printCentered(W / 2, y + hOff, apUrl, GxEPD_RED);
+    printCentered(W / 2, y + 44, apUrl, GxEPD_RED);
 
-    y += step;
+    y += 96;
     display.setFont(&FreeSansBold12pt7b);
     printAt(x, y, "3.", GxEPD_RED);
     display.setFont(&FreeSans12pt7b);
@@ -952,7 +921,6 @@ void setup() {
   bool haveConfig = settingsLoad();
   fsStoreBegin();
   prepareLayout();
-  portalSetPanelInfo(display.width(), display.height());
 
   if (buttonHeld || !haveConfig || g_wifiFails >= FAILS_BEFORE_PORTAL) {
     PortalReason why = buttonHeld ? PORTAL_BUTTON

@@ -20,11 +20,7 @@ const PROVIDERS = {
               hint: 'Use an app password: Fastmail Settings → Privacy & Security → App passwords.' },
   gmail:    { host: 'imap.gmail.com',    dav: '',
               hint: 'Requires an app password (Google Account → Security → 2-Step Verification → App passwords). For calendar, use the ICS secret address instead of CalDAV.' },
-  icloud:   { host: 'imap.mail.me.com',  dav: 'https://caldav.icloud.com/',
-              hint: 'Requires an app-specific password (appleid.apple.com → Sign-In and Security → App-Specific Passwords). Username = your full iCloud address.' },
-  mailboxorg: { host: 'imap.mailbox.org', dav: 'https://dav.mailbox.org/',
-              hint: 'Your normal mailbox.org password (or an app password if you use 2FA).' },
-  custom:   { host: '', dav: '', hint: 'Any standard IMAP server works. Note: Outlook.com/Hotmail no longer allow password logins from apps like this one — use a different provider or an ICS calendar link.' },
+  custom:   { host: '', dav: '', hint: '' },
 };
 
 // IANA zone -> POSIX TZ (common zones; "custom" always available)
@@ -378,18 +374,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     const st = await api('/api/state', null, 1);
     if (st && st.haveConfig) $('hdr-sub').textContent = 'Settings mode — existing configuration loaded';
-    if (st && st.panelW) setPanelAspect(st.panelW, st.panelH);
     if (st && st.cfg) prefill(st.cfg);
   } catch (e) {}
 });
-// Size the layout-editor canvas to the panel's real aspect ratio
-// (800x480 -> the classic 560x336; a 648x480 panel -> 560x415, etc.)
-function setPanelAspect(w, h) {
-  if (!w || !h) return;
-  CY = Math.max(16, Math.round((560 * h / w) / ROWS));
-  const cv = $('ed-canvas');
-  if (cv) cv.style.height = (CY * ROWS) + 'px';
-}
 function prefill(c) {
   try {
     if (c.wifi) { $('wifi-ssid').value = c.wifi.ssid || ''; }
@@ -421,16 +408,14 @@ document.querySelectorAll('#mainTabs a').forEach(a => a.onclick = (e) => {
   e.preventDefault();
   document.querySelectorAll('#mainTabs a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
-  for (const t of ['setup', 'layout', 'blocks', 'update'])
+  for (const t of ['setup', 'layout', 'blocks'])
     $(`tab-${t}`).classList.toggle('step-hidden', a.dataset.tab !== t);
   if (a.dataset.tab === 'layout') edInit();
   if (a.dataset.tab === 'blocks') blRefresh();
-  if (a.dataset.tab === 'update') fwInfo();
 });
 
 // ================= layout editor =================
-const COLS = 16, ROWS = 12, CX = 35;   // editor cells; CY follows the panel's aspect
-let CY = 28;                           // (800x480 default: 35x28 px per cell)
+const COLS = 16, ROWS = 12, CX = 35, CY = 28;   // display cells (real: 50x40 px)
 const BUILTINS = {
   'core-clock':      { name: 'Clock',          minW: 5, minH: 2 },
   'core-datestatus': { name: 'Date & status',  minW: 5, minH: 2 },
@@ -659,59 +644,4 @@ async function blRegistry() {
 async function blInstallFromReg(url) {
   try { blResult(await api('/api/blocks/install', { method: 'POST', body: JSON.stringify({ url }) }, 2)); }
   catch (e) { alertBox('bl-alert', 'danger', 'Device didn\'t answer.'); }
-}
-
-// ================= firmware update (OTA) =================
-async function fwInfo() {
-  try {
-    const r = await api('/api/ota/info', null, 2);
-    $('fw-status').innerHTML =
-      `Running <b>v${esc(r.version)}</b> from slot <span class="mono">${esc(r.running)}</span>` +
-      (r.otaReady ? ` — spare slot ready (${(r.slotBytes / 1048576).toFixed(1)} MB).`
-                  : ' — <b>no spare slot</b>.');
-    $('fw-form').classList.toggle('step-hidden', !r.otaReady);
-    $('fw-migrate').classList.toggle('step-hidden', !!r.otaReady);
-  } catch (e) { $('fw-status').textContent = 'Could not reach the device.'; }
-}
-function fwUpload() {
-  const f = $('fw-file').files[0];
-  if (!f) { alertBox('fw-alert', 'warning', 'Choose the .bin file first.'); return; }
-  if (/factory/i.test(f.name))
-    return alertBox('fw-alert', 'danger',
-      'That looks like the <b>factory</b> image — over the air you must use <span class="mono">epaper-dashboard-app.bin</span>.');
-  const sha = $('fw-sha').value.trim();
-  if (sha && !/^[0-9a-fA-F]{64}$/.test(sha))
-    return alertBox('fw-alert', 'danger', 'That SHA-256 doesn\'t look right (need 64 hex characters, or leave it blank).');
-  busy('btn-fwup', true, 'Uploading…');
-  $('fw-prog-wrap').classList.remove('step-hidden');
-  const form = new FormData();
-  form.append('firmware', f, f.name);
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/ota' + (sha ? '?sha256=' + sha : ''));
-  xhr.upload.onprogress = (ev) => {
-    if (!ev.lengthComputable) return;
-    const pct = Math.round(100 * ev.loaded / ev.total);
-    $('fw-prog').style.width = pct + '%';
-    $('fw-prog').textContent = pct < 100 ? pct + '%' : 'flashing…';
-  };
-  xhr.onerror = () => {
-    busy('btn-fwup', false);
-    alertBox('fw-alert', 'danger', 'Upload failed — device didn\'t answer.');
-  };
-  xhr.onload = () => {
-    busy('btn-fwup', false);
-    let r = {};
-    try { r = JSON.parse(xhr.responseText); } catch (e) {}
-    if (r.ok) {
-      $('fw-prog').style.width = '100%';
-      $('fw-prog').textContent = 'done';
-      alertBox('fw-alert', 'success',
-        'Flashed and verified — the device is rebooting into the new firmware. ' +
-        'It will redraw the dashboard and reopen this page in about a minute.');
-    } else {
-      $('fw-prog-wrap').classList.add('step-hidden');
-      alertBox('fw-alert', 'danger', esc(r.msg || 'update failed'));
-    }
-  };
-  xhr.send(form);
 }

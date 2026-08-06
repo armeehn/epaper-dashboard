@@ -32,10 +32,8 @@ placed and moved on the same grid as contributed blocks.
 
 ## Layout
 
-The panel is a **16 × 12 grid** — cells are `width/16 × height/12` px, so the
-same layout scales to any supported resolution (50 × 40 px on the classic
-800×480). A layout is a list of placed block instances:
-`{instance id, block id, x, y, w, h, params}`.
+The 800×480 panel is a **16 × 12 grid** (50 × 40 px cells). A layout is a
+list of placed block instances: `{instance id, block id, x, y, w, h, params}`.
 The web portal's **Layout** tab is a drag-and-drop editor: drag tiles to move,
 drag the corner handle to resize, click a tile to edit its parameters (the
 form is generated from the block's declared params — types, labels, choices).
