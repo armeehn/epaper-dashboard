@@ -287,3 +287,16 @@ bool hexDigestMatches(const char* expectedHex, const uint8_t* digest, size_t dig
   }
   return true;
 }
+
+bool mailDomainAllowed(const String& d) {
+  if (d.length() < 3 || d.length() > 63 || d.indexOf('.') < 0) return false;
+  if (d.endsWith(".local") || d == "localhost") return false;
+  bool allDigitsAndDots = true;
+  for (size_t i = 0; i < d.length(); i++) {
+    char c = d[i];
+    bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-';
+    if (!ok) return false;
+    if (!isdigit((unsigned char)c) && c != '.') allDigitsAndDots = false;
+  }
+  return !allDigitsAndDots;   // reject bare IPv4 literals
+}

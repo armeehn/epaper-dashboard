@@ -604,7 +604,7 @@ static void drawContribBlock(const BlockDef& def, const BlockData& d,
 
 static void drawAll() {
   int16_t W = display.width(), H = display.height();
-  int16_t cw = W / 16, chh = H / 12;
+  int16_t cw = W / GRID_COLS, chh = H / GRID_ROWS;
 
   display.fillScreen(GxEPD_WHITE);
   for (JsonObjectConst it : s_layoutDoc.as<JsonArrayConst>()) {

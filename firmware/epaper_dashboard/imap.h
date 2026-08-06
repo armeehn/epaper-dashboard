@@ -14,3 +14,8 @@ void imapParseHeaderBlock(const char* block, EmailT& out);
 
 // Connect + login + count unseen + fetch newest N matching messages.
 bool imapFetch(const Settings& s, ImapResult& r);
+
+// Credential-free reachability check: TLS-connect and read the greeting.
+// True if an IMAP server answered; banner receives its greeting line.
+// Used by the setup wizard to auto-detect the host for any mail domain.
+bool imapProbe(const char* host, uint16_t port, char* banner, size_t bannerLen);

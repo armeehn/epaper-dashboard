@@ -15,6 +15,13 @@ FW="$ROOT/firmware/epaper_dashboard"
 BUILD="$ROOT/tests/host/.build"
 mkdir -p "$DEPS" "$BUILD"
 
+# The signature round-trip verifies a real .epb from the block registry, which
+# is a submodule. Without it the suite would "pass" having skipped that check.
+if [ ! -f "$ROOT/registry/index.json" ]; then
+  echo "registry/ is empty — run: git submodule update --init" >&2
+  exit 1
+fi
+
 clone() { [ -d "$DEPS/$2" ] || git clone -q --depth 1 "https://github.com/$1" "$DEPS/$2"; }
 echo "== deps =="
 clone bxparks/EpoxyDuino EpoxyDuino

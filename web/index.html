@@ -18,6 +18,8 @@
   .btn-epaper:hover { background: #333; color: #fff; }
   .btn-red { background: #c0392b; color: #fff; }
   .btn-red:hover { background: #a93226; color: #fff; }
+  .store-shot { max-height: 64px; border: 1px solid #dee2e6; border-radius: .25rem; }
+  .store-cat { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -26,6 +28,7 @@
   <div class="text-center mb-3">
     <h3 class="fw-bold mb-0">E-Paper Dashboard <span class="brand-dot">&bull;</span> Setup</h3>
     <div class="text-secondary small" id="hdr-sub">Let's get your display online</div>
+    <div class="text-secondary small mono" id="hdr-dev"></div>
   </div>
 
   <ul class="nav nav-pills nav-fill mb-3" id="mainTabs">
@@ -47,9 +50,10 @@
       <p>This wizard runs <strong>on the display itself</strong>. In the next few steps it will:</p>
       <ul class="mb-3">
         <li>join your home WiFi,</li>
-        <li>connect to your <strong>email</strong> (IMAP — works with Migadu, Fastmail, and most providers),</li>
-        <li>find your <strong>calendar</strong> (CalDAV auto-discovery, or an ICS link),</li>
-        <li>set your <strong>weather</strong> location, clock and refresh schedule.</li>
+        <li>connect to your <strong>email</strong> over IMAP — any provider that still allows password logins,</li>
+        <li>find your <strong>calendar</strong> over CalDAV, or follow any ICS link,</li>
+        <li>set your <strong>weather</strong> location, clock and refresh schedule,</li>
+        <li>let you add <strong>optional blocks</strong> from the store.</li>
       </ul>
       <p class="text-secondary small mb-3">Each step is tested live before you move on, so problems show up here — not as a blank screen later. Nothing leaves the device: credentials are stored only in its internal flash.</p>
       <button class="btn btn-epaper w-100" onclick="go(1)">Start setup</button>
@@ -60,7 +64,7 @@
   <div class="card shadow-sm step step-hidden" id="step-1">
     <div class="card-body p-4">
       <h5 class="card-title">1 · WiFi</h5>
-      <p class="text-secondary small">Pick your home network (2.4 GHz only — the ESP32 can't see 5 GHz networks).</p>
+      <p class="text-secondary small">Pick your home network (2.4 GHz only — <span data-dev="chip">the ESP32</span> can't see 5 GHz networks).</p>
       <div class="d-flex gap-2 mb-2">
         <button class="btn btn-outline-secondary btn-sm" id="btn-scan" onclick="scanWifi()">Scan networks</button>
         <div class="spinner-border spinner-border-sm mt-1 step-hidden" id="scan-spin"></div>
@@ -91,26 +95,24 @@
     <div class="card-body p-4">
       <h5 class="card-title">2 · Email (IMAP)</h5>
       <div class="mb-3">
-        <label class="form-label">Provider</label>
-        <select class="form-select" id="im-provider" onchange="providerChanged()">
-          <option value="migadu" selected>Migadu</option>
-          <option value="fastmail">Fastmail</option>
-          <option value="gmail">Gmail (app password)</option>
-          <option value="icloud">iCloud Mail (app password)</option>
-          <option value="mailboxorg">mailbox.org</option>
-          <option value="custom">Other / custom (any IMAP server)</option>
-        </select>
-      </div>
-      <div class="mb-3">
         <label class="form-label">Email address</label>
         <input class="form-control" id="im-user" placeholder="you@yourdomain.com" onchange="emailChanged()">
+        <div class="form-text">Type your address first — the provider below is picked for you when it's a known one.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Provider</label>
+        <div class="input-group">
+          <select class="form-select" id="im-provider" onchange="providerChanged()"></select>
+          <button class="btn btn-outline-danger" id="btn-detect" onclick="detectImap()">Detect</button>
+        </div>
+        <div class="form-text" id="im-provider-note"></div>
       </div>
       <div class="mb-3">
         <label class="form-label">Password</label>
         <input type="password" class="form-control" id="im-pass">
         <div class="form-text" id="im-pass-hint"></div>
       </div>
-      <details class="mb-3">
+      <details class="mb-3" id="im-adv">
         <summary class="text-secondary small">Advanced (host, port, folder)</summary>
         <div class="row g-2 mt-1">
           <div class="col-7"><label class="form-label small">IMAP host</label><input class="form-control form-control-sm" id="im-host"></div>
@@ -163,9 +165,16 @@
 
       <div id="cal-caldav-wrap">
         <div class="mb-3">
+          <label class="form-label">Calendar provider</label>
+          <select class="form-select" id="cd-provider" onchange="calProviderChanged()"></select>
+          <div class="form-text" id="cd-provider-note"></div>
+        </div>
+        <div class="mb-3">
           <label class="form-label">CalDAV server</label>
-          <input class="form-control" id="cd-base" placeholder="https://cdav.migadu.com/">
-          <div class="form-text">Migadu: <span class="mono">https://cdav.migadu.com/</span> · Fastmail: <span class="mono">https://caldav.fastmail.com/</span> · Nextcloud: <span class="mono">https://cloud.example.com/remote.php/dav/</span></div>
+          <input class="form-control" id="cd-base" placeholder="https://dav.example.com/">
+          <div class="form-text">Any standards-compliant server works — the device follows
+            <span class="mono">/.well-known/caldav</span> to your calendar list, so your
+            provider's plain domain is usually enough.</div>
         </div>
         <div class="row g-2 mb-3">
           <div class="col-6"><label class="form-label">Username</label><input class="form-control" id="cd-user"></div>
@@ -179,7 +188,7 @@
         <div class="mb-3">
           <label class="form-label">ICS / iCal URL</label>
           <input class="form-control" id="ics-url" placeholder="https://…/calendar.ics">
-          <div class="form-text">Google Calendar: Settings → your calendar → "Secret address in iCal format".</div>
+          <div class="form-text" id="ics-hint">Any published iCalendar feed. Google Calendar: Settings → your calendar → "Secret address in iCal format".</div>
         </div>
       </div>
 
@@ -240,7 +249,7 @@
             <option value="30">30 minutes</option>
             <option value="60">60 minutes</option>
           </select>
-          <div class="form-text">Each refresh flashes ~25 s — that's how tri-color e-paper works.</div>
+          <div class="form-text" id="rf-hint"></div>
         </div>
       </div>
       <div class="mb-3">
@@ -258,30 +267,70 @@
       </div>
       <div class="d-flex gap-2 mt-3">
         <button class="btn btn-outline-secondary" onclick="go(4)">Back</button>
-        <button class="btn btn-epaper flex-fill" onclick="buildReview();go(6)">Next</button>
+        <button class="btn btn-epaper flex-fill" onclick="go(6)">Next</button>
       </div>
     </div>
   </div>
 
-  <!-- STEP 6: review -->
+  <!-- STEP 6: store -->
   <div class="card shadow-sm step step-hidden" id="step-6">
     <div class="card-body p-4">
-      <h5 class="card-title">6 · Review &amp; finish</h5>
-      <table class="table table-sm small" id="review"></table>
-      <div id="fin-alert"></div>
-      <button class="btn btn-red w-100" id="btn-finish" onclick="finish()">Save &amp; start the dashboard</button>
-      <div class="form-text mt-2">The device reboots, this setup network disappears, and the first dashboard appears on the e-paper within about a minute.</div>
+      <h5 class="card-title">6 · Store <span class="badge text-bg-secondary align-middle">optional</span></h5>
+      <p class="text-secondary small mb-2">
+        Extras you can put on the screen next to the clock, weather, calendar and inbox.
+        Blocks are <strong>data, not code</strong>: each one declares a web address to read
+        and a widget to draw it with, and the device's fixed engine does the rest — nothing a
+        block contains can execute. Signed blocks are checked against this device's trusted
+        keys before they are stored.
+      </p>
+      <p class="text-secondary small mb-3">Skip this entirely if you like — you can add blocks any time from the <strong>Blocks</strong> tab.</p>
+
+      <div class="d-flex gap-2 mb-2 flex-wrap" id="store-cats"></div>
+      <div id="store-alert"></div>
+      <div class="list-group mb-2" id="store-list">
+        <div class="list-group-item text-secondary small">Loading the store…</div>
+      </div>
+      <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-outline-secondary btn-sm" onclick="storeLoad(true)">Reload</button>
+        <span class="text-secondary small align-self-center" id="store-count"></span>
+      </div>
+      <details class="mb-3">
+        <summary class="text-secondary small">Use a different registry</summary>
+        <div class="input-group input-group-sm mt-2">
+          <input class="form-control mono" id="store-url">
+          <button class="btn btn-outline-dark" onclick="storeLoad(true)">Load</button>
+        </div>
+        <div class="form-text">Any HTTPS index works. Whose signature this device
+          <em>trusts</em> is compiled in, so a strange registry cannot install anything
+          unless you allow unsigned blocks in the Blocks tab.</div>
+      </details>
+
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" onclick="go(5)">Back</button>
+        <button class="btn btn-epaper flex-fill" onclick="buildReview();go(7)">Next</button>
+      </div>
     </div>
   </div>
 
-  <!-- STEP 7: done -->
+  <!-- STEP 7: review -->
   <div class="card shadow-sm step step-hidden" id="step-7">
+    <div class="card-body p-4">
+      <h5 class="card-title">7 · Review &amp; finish</h5>
+      <table class="table table-sm small" id="review"></table>
+      <div id="fin-alert"></div>
+      <button class="btn btn-red w-100" id="btn-finish" onclick="finish()">Save &amp; start the dashboard</button>
+      <div class="form-text mt-2">The device reboots, this setup network disappears, and the first dashboard appears on the panel within about a minute.</div>
+    </div>
+  </div>
+
+  <!-- STEP 8: done -->
+  <div class="card shadow-sm step step-hidden" id="step-8">
     <div class="card-body p-4 text-center">
       <div style="font-size:3rem;">✅</div>
       <h5>All set!</h5>
       <p class="text-secondary">Configuration saved. The display is rebooting and will draw your dashboard shortly.<br>
       You can close this page and rejoin your normal WiFi.</p>
-      <p class="small text-secondary">To change settings later: tap <strong>RST</strong>, then immediately press &amp; hold <strong>BOOT</strong> for ~2 seconds — the setup network will come back. (Don't hold BOOT <em>while</em> pressing RST: that puts the chip into its flashing mode instead.)</p>
+      <p class="small text-secondary" id="done-buttons"></p>
     </div>
   </div>
 
@@ -298,19 +347,18 @@
             <button class="btn btn-outline-dark btn-sm" onclick="edAdd()">Add</button>
           </div>
         </div>
-        <div class="text-secondary small mb-2">Drag tiles to move · drag the ◢ corner to resize · click to select &amp; configure. The grid is the real 800×480 panel.</div>
+        <div class="text-secondary small mb-2" id="ed-hint">Drag tiles to move · drag the ◢ corner to resize · click to select &amp; configure.</div>
         <div id="ed-canvas" style="position:relative;width:560px;height:336px;max-width:100%;
-             background:#fbf9f4;border:2px solid #1a1a1a;
+             background:#fbf9f4;border:2px solid #1a1a1a;touch-action:none;
              background-image:repeating-linear-gradient(#0000 0 27px,#00000014 27px 28px),
-                              repeating-linear-gradient(90deg,#0000 0 34px,#00000014 34px 35px);
-             touch-action:none;"></div>
+                              repeating-linear-gradient(90deg,#0000 0 34px,#00000014 34px 35px);"></div>
         <div id="ed-params" class="border rounded p-2 mt-2 step-hidden"></div>
         <div id="ed-alert" class="mt-2"></div>
         <div class="d-flex gap-2 mt-2">
           <button class="btn btn-epaper flex-fill" id="btn-savelayout" onclick="edSave()">Save layout</button>
           <button class="btn btn-outline-danger" id="btn-preview" onclick="edPreview()">Save &amp; preview on panel</button>
         </div>
-        <div class="form-text">Preview saves this canvas, then draws it on the e-paper — with your real data when the device has it, sample data otherwise (~25 s of flashing).</div>
+        <div class="form-text" id="ed-preview-hint">Preview saves this canvas, then draws it on the panel — with your real data when the device has it, sample data otherwise.</div>
       </div>
     </div>
   </div>
@@ -326,10 +374,9 @@
           <input class="form-check-input" type="checkbox" id="bl-unsigned" onchange="blPolicy()">
           <label class="form-check-label small" for="bl-unsigned">Allow <strong>unsigned</strong> blocks (for local development — signed-only is safer)</label>
         </div>
-        <h6>Install from registry</h6>
+        <h6>Install from a registry</h6>
         <div class="input-group input-group-sm mb-2">
-          <input class="form-control mono" id="bl-reg-url" placeholder="https://…/index.json"
-                 value="https://raw.githubusercontent.com/armeehn/epaper-dashboard/main/registry/index.json">
+          <input class="form-control mono" id="bl-reg-url" placeholder="https://…/index.json">
           <button class="btn btn-outline-dark" onclick="blRegistry()">Load</button>
         </div>
         <div class="list-group mb-3" id="bl-reg-list"></div>
@@ -353,7 +400,7 @@
         <div class="text-secondary small mb-2" id="fw-status">Checking this device…</div>
         <div id="fw-form" class="step-hidden">
           <div class="mb-2">
-            <label class="form-label small mb-1">Firmware file — the <span class="mono">…-app.bin</span> for <em>your panel</em> from the GitHub Actions artifact (not the factory image)</label>
+            <label class="form-label small mb-1">Firmware file — the <span class="mono">…-app.bin</span> built for <em>your panel</em> (not the factory image)</label>
             <input class="form-control form-control-sm" type="file" id="fw-file" accept=".bin">
           </div>
           <div class="mb-2">
@@ -386,9 +433,7 @@
     </div>
   </div>
 
-  <div class="text-center text-secondary small mt-3">
-    e-paper dashboard · setup portal running on the ESP32 at <span class="mono">192.168.4.1</span>
-  </div>
+  <div class="text-center text-secondary small mt-3" id="footer-note">e-paper dashboard</div>
 </div>
 <script src="/app.js"></script>
 </body>

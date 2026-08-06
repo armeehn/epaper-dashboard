@@ -2,7 +2,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const steps = 8;
+const steps = 9;
 let cur = 0;
 
 const state = {
@@ -10,22 +10,125 @@ const state = {
   calHref: '',       // chosen CalDAV calendar URL
   calName: '',
   wx: null,          // {name, lat, lon, tz}
+  installed: [],     // block ids installed from the store during setup
+};
+
+// ---------- device ----------
+// Everything hardware-specific comes from GET /api/state — this page states
+// no panel size, refresh time, chip or grid of its own, so adding a preset to
+// config.h is enough for the UI to describe that device correctly. The values
+// below only stand in for the moment before that call returns.
+const DEV = {
+  panel: 'e-paper panel', panelW: 800, panelH: 480, colors: 3, refreshSec: 25,
+  board: '', chip: 'ESP32', cols: 16, rows: 12,
+  hostname: 'epaper-dashboard', apIp: '192.168.4.1', ap: 'EPaper-Dashboard',
+  setupPin: 0, registry: '',
 };
 
 // ---------- providers ----------
-const PROVIDERS = {
-  migadu:   { host: 'imap.migadu.com',  dav: 'https://cdav.migadu.com/',
-              hint: 'Your normal Migadu mailbox password (or an app password if you created one).' },
-  fastmail: { host: 'imap.fastmail.com', dav: 'https://caldav.fastmail.com/',
-              hint: 'Use an app password: Fastmail Settings → Privacy & Security → App passwords.' },
-  gmail:    { host: 'imap.gmail.com',    dav: '',
-              hint: 'Requires an app password (Google Account → Security → 2-Step Verification → App passwords). For calendar, use the ICS secret address instead of CalDAV.' },
-  icloud:   { host: 'imap.mail.me.com',  dav: 'https://caldav.icloud.com/',
-              hint: 'Requires an app-specific password (appleid.apple.com → Sign-In and Security → App-Specific Passwords). Username = your full iCloud address.' },
-  mailboxorg: { host: 'imap.mailbox.org', dav: 'https://dav.mailbox.org/',
-              hint: 'Your normal mailbox.org password (or an app password if you use 2FA).' },
-  custom:   { host: '', dav: '', hint: 'Any standard IMAP server works. Note: Outlook.com/Hotmail no longer allow password logins from apps like this one — use a different provider or an ICS calendar link.' },
-};
+// Presets, not a limit: any IMAP server and any CalDAV server work. Unknown
+// domains go through "Detect", which probes the conventional host names on
+// the device itself. `domains` is only used to preselect an entry.
+const MAIL_PROVIDERS = [
+  { id: 'auto', name: 'Detect from my address', group: 'Automatic', auto: true,
+    hint: 'Press Detect and the device will try the usual IMAP host names for your domain.' },
+
+  { id: 'migadu', name: 'Migadu', group: 'Providers', host: 'imap.migadu.com',
+    hint: 'Your normal Migadu mailbox password (or an app password if you created one).' },
+  { id: 'fastmail', name: 'Fastmail', group: 'Providers', host: 'imap.fastmail.com',
+    domains: ['fastmail.com', 'fastmail.fm', 'sent.com', 'messagingengine.com'],
+    hint: 'Use an app password: Settings → Privacy & Security → App passwords.' },
+  { id: 'gmail', name: 'Gmail / Google Workspace', group: 'Providers', host: 'imap.gmail.com',
+    domains: ['gmail.com', 'googlemail.com'],
+    hint: 'Requires an app password (Google Account → Security → 2-Step Verification → App passwords), and IMAP enabled in Gmail settings.' },
+  { id: 'icloud', name: 'iCloud Mail', group: 'Providers', host: 'imap.mail.me.com',
+    domains: ['icloud.com', 'me.com', 'mac.com'],
+    hint: 'Requires an app-specific password (appleid.apple.com → Sign-In and Security). Username is your full iCloud address.' },
+  { id: 'mailboxorg', name: 'mailbox.org', group: 'Providers', host: 'imap.mailbox.org',
+    domains: ['mailbox.org'],
+    hint: 'Your normal mailbox.org password (or an app password if you use 2FA).' },
+  { id: 'posteo', name: 'Posteo', group: 'Providers', host: 'posteo.de',
+    domains: ['posteo.de', 'posteo.net'],
+    hint: 'Your normal Posteo password.' },
+  { id: 'zoho', name: 'Zoho Mail', group: 'Providers', host: 'imap.zoho.com',
+    domains: ['zoho.com', 'zohomail.com'],
+    hint: 'Use an app password. On a regional account the host is imap.zoho.eu / .in / .com.au — adjust it under Advanced.' },
+  { id: 'yahoo', name: 'Yahoo Mail', group: 'Providers', host: 'imap.mail.yahoo.com',
+    domains: ['yahoo.com', 'yahoo.co.uk', 'yahoo.de', 'ymail.com', 'rocketmail.com'],
+    hint: 'Requires an app password (Account Security → Generate app password).' },
+  { id: 'aol', name: 'AOL Mail', group: 'Providers', host: 'imap.aol.com',
+    domains: ['aol.com'],
+    hint: 'Requires an app password.' },
+  { id: 'yandex', name: 'Yandex Mail', group: 'Providers', host: 'imap.yandex.com',
+    domains: ['yandex.com', 'yandex.ru', 'ya.ru'],
+    hint: 'Requires an app password, and IMAP enabled in Yandex mail settings.' },
+  { id: 'gmx', name: 'GMX', group: 'Providers', host: 'imap.gmx.net',
+    domains: ['gmx.com', 'gmx.net', 'gmx.de', 'gmx.at', 'gmx.ch'],
+    hint: 'Enable IMAP access in the GMX web settings first.' },
+  { id: 'webde', name: 'WEB.DE', group: 'Providers', host: 'imap.web.de',
+    domains: ['web.de'],
+    hint: 'Enable IMAP access in the WEB.DE web settings first.' },
+  { id: 'purelymail', name: 'Purelymail', group: 'Providers', host: 'imap.purelymail.com',
+    domains: ['purelymail.com'],
+    hint: 'Your normal Purelymail password.' },
+  { id: 'startmail', name: 'StartMail', group: 'Providers', host: 'imap.startmail.com',
+    domains: ['startmail.com'],
+    hint: 'Requires an app password created in StartMail settings.' },
+
+  { id: 'cpanel', name: 'Self-hosted / cPanel / Plesk', group: 'Self-hosted', host: '',
+    hostFromDomain: 'mail.',
+    hint: 'Shared hosting usually answers on mail.yourdomain.com. Press Detect if you are not sure.' },
+  { id: 'dovecot', name: 'Dovecot / mailcow / Mailu', group: 'Self-hosted', host: '',
+    hostFromDomain: 'imap.',
+    hint: 'Any standard IMAP server over TLS on port 993.' },
+
+  { id: 'outlook', name: 'Outlook.com / Microsoft 365', group: 'Password login withdrawn',
+    domains: ['outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'passport.com'],
+    blocked: 'Microsoft has withdrawn password logins for IMAP — only OAuth2 works, which a device like this cannot do. Options: forward the mail you want to see to a mailbox that still allows IMAP, or leave email off and use the calendar via a published ICS link.' },
+  { id: 'proton', name: 'Proton Mail', group: 'Password login withdrawn',
+    domains: ['proton.me', 'protonmail.com', 'protonmail.ch', 'pm.me'],
+    blocked: 'Proton only exposes IMAP through Proton Mail Bridge, which runs on a computer on your LAN and is not reachable with the credentials you have here.' },
+  { id: 'tutanota', name: 'Tuta (Tutanota)', group: 'Password login withdrawn',
+    domains: ['tutanota.com', 'tuta.com', 'tutamail.com'],
+    blocked: 'Tuta does not offer IMAP at all — its mail is only reachable through its own apps.' },
+
+  { id: 'custom', name: 'Other / any IMAP server', group: 'Other', host: '',
+    hint: 'Any server speaking IMAP over TLS works. Fill in the host under Advanced, or press Detect.' },
+];
+
+const CAL_PROVIDERS = [
+  { id: 'auto', name: 'Same as my email provider', group: 'Automatic', follow: true,
+    note: 'Uses the CalDAV server that goes with the provider chosen in the email step.' },
+
+  { id: 'migadu', name: 'Migadu', group: 'Providers', dav: 'https://cdav.migadu.com/' },
+  { id: 'fastmail', name: 'Fastmail', group: 'Providers', dav: 'https://caldav.fastmail.com/' },
+  { id: 'icloud', name: 'iCloud', group: 'Providers', dav: 'https://caldav.icloud.com/',
+    note: 'Use the same app-specific password as iCloud Mail.' },
+  { id: 'mailboxorg', name: 'mailbox.org', group: 'Providers', dav: 'https://dav.mailbox.org/' },
+  { id: 'posteo', name: 'Posteo', group: 'Providers', dav: 'https://posteo.de:8443/' },
+  { id: 'zoho', name: 'Zoho Calendar', group: 'Providers', dav: 'https://calendar.zoho.com/caldav/' },
+  { id: 'yahoo', name: 'Yahoo Calendar', group: 'Providers', dav: 'https://caldav.calendar.yahoo.com/' },
+  { id: 'yandex', name: 'Yandex Calendar', group: 'Providers', dav: 'https://caldav.yandex.ru/' },
+
+  { id: 'nextcloud', name: 'Nextcloud / ownCloud', group: 'Self-hosted',
+    dav: 'https://cloud.example.com/remote.php/dav/',
+    note: 'Replace the host with your own. An app password from Settings → Security is safer than your login password.' },
+  { id: 'baikal', name: 'Baïkal', group: 'Self-hosted', dav: 'https://dav.example.com/dav.php' },
+  { id: 'radicale', name: 'Radicale', group: 'Self-hosted', dav: 'https://dav.example.com/' },
+  { id: 'synology', name: 'Synology Calendar', group: 'Self-hosted', dav: 'https://nas.example.com:5001/caldav/' },
+  { id: 'zimbra', name: 'Zimbra', group: 'Self-hosted', dav: 'https://mail.example.com/dav/' },
+
+  { id: 'google', name: 'Google Calendar', group: 'ICS only', icsOnly: true,
+    note: 'Google CalDAV needs OAuth2, which this device cannot do. Use the secret iCal address instead: Calendar settings → your calendar → "Secret address in iCal format".' },
+  { id: 'outlookcal', name: 'Outlook.com / Microsoft 365', group: 'ICS only', icsOnly: true,
+    note: 'Publish the calendar (Calendar settings → Shared calendars → Publish) and paste the ICS link it gives you.' },
+
+  { id: 'custom', name: 'Other / any CalDAV server', group: 'Other', dav: '',
+    note: 'The device follows /.well-known/caldav, so the plain server URL is usually enough.' },
+];
+
+const mailProvider = (id) => MAIL_PROVIDERS.find(p => p.id === id) || MAIL_PROVIDERS[0];
+const calProvider = (id) => CAL_PROVIDERS.find(p => p.id === id) || CAL_PROVIDERS[0];
 
 // IANA zone -> POSIX TZ (common zones; "custom" always available)
 const TZ = [
@@ -98,7 +201,60 @@ function go(n) {
   $(`step-${n}`).classList.remove('step-hidden');
   cur = n;
   $('progress').style.width = `${Math.max(5, Math.round(n / (steps - 1) * 100))}%`;
+  if (n === 6) storeLoad(false);
   window.scrollTo(0, 0);
+}
+// Populate a <select> from a catalogue, grouping by `group`.
+function fillProviderSelect(sel, list) {
+  sel.innerHTML = '';
+  const groups = [];
+  for (const p of list) if (!groups.includes(p.group)) groups.push(p.group);
+  for (const g of groups) {
+    const og = document.createElement('optgroup');
+    og.label = g;
+    for (const p of list.filter(x => x.group === g)) og.appendChild(new Option(p.name, p.id));
+    sel.appendChild(og);
+  }
+}
+
+// ---------- device description ----------
+function applyDevice(d) {
+  Object.assign(DEV, d || {});
+  COLS = DEV.cols || 16;
+  ROWS = DEV.rows || 12;
+
+  const colorWord = DEV.colors >= 3 ? 'black/white/red' : 'black &amp; white';
+  $('hdr-dev').innerHTML =
+    `${esc(DEV.panel)} · ${DEV.panelW}×${DEV.panelH} · ${colorWord}` +
+    (DEV.chip ? ` · ${esc(DEV.chip)}` : '');
+  document.querySelectorAll('[data-dev="chip"]').forEach(e => { e.textContent = DEV.chip || 'the ESP32'; });
+
+  $('rf-hint').innerHTML = DEV.colors >= 3
+    ? `Each refresh flashes for about ${DEV.refreshSec} s — that is how a three-colour panel works.`
+    : `Each refresh takes about ${DEV.refreshSec} s on this panel.`;
+
+  $('ed-hint').innerHTML =
+    `Drag tiles to move · drag the ◢ corner to resize · click to select &amp; configure. ` +
+    `The grid is the real ${DEV.panelW}×${DEV.panelH} panel, ${COLS}×${ROWS} cells.`;
+  $('ed-preview-hint').textContent =
+    `Preview saves this canvas, then draws it on the panel — with your real data when the device has it, ` +
+    `sample data otherwise (about ${DEV.refreshSec} s of flashing).`;
+
+  const btn = DEV.setupPin === 0 ? 'BOOT' : `the button on GPIO${DEV.setupPin}`;
+  $('done-buttons').innerHTML =
+    `To change settings later: tap <strong>RST</strong>, then immediately press &amp; hold ` +
+    `<strong>${esc(btn)}</strong> for ~2 seconds — the setup network will come back. ` +
+    `(Don't hold it <em>while</em> pressing RST: that puts the chip into its flashing mode instead.)`;
+
+  $('footer-note').innerHTML =
+    `e-paper dashboard${DEV.fw ? ' v' + esc(DEV.fw) : ''} · ${esc(DEV.board || DEV.chip)} · ` +
+    `served by the device at <span class="mono">${esc(location.host)}</span>`;
+
+  if (DEV.registry) {
+    $('store-url').value = DEV.registry;
+    $('bl-reg-url').value = DEV.registry;
+  }
+  setPanelAspect(DEV.panelW, DEV.panelH);
 }
 
 // ---------- step 1: wifi ----------
@@ -163,18 +319,75 @@ async function joinWifi() {
 }
 
 // ---------- step 2: email ----------
+function emailDomain() {
+  const u = $('im-user').value.trim().toLowerCase();
+  const at = u.indexOf('@');
+  return at > 0 ? u.slice(at + 1) : '';
+}
 function providerChanged() {
-  const p = PROVIDERS[$('im-provider').value];
-  if (p.host) $('im-host').value = p.host;
-  $('im-pass-hint').textContent = p.hint;
-  if (p.dav) $('cd-base').value = p.dav;
-  emailChanged();
+  const p = mailProvider($('im-provider').value);
+  const dom = emailDomain();
+
+  if (p.blocked) {
+    $('im-provider-note').innerHTML = `<span class="text-danger">${esc(p.blocked)}</span>`;
+    $('im-pass-hint').textContent = '';
+    $('im-host').value = '';
+  } else {
+    $('im-provider-note').textContent = '';
+    $('im-pass-hint').textContent = p.hint || '';
+    if (p.host) $('im-host').value = p.host;
+    else if (p.hostFromDomain && dom) $('im-host').value = p.hostFromDomain + dom;
+    else if (p.auto && !$('im-host').value && dom) $('im-host').value = 'imap.' + dom;
+  }
+  // Open Advanced when there is nothing sensible to prefill, so the one field
+  // that still needs a human is visible rather than hidden behind a summary.
+  $('im-adv').open = !!dom && !p.blocked && !$('im-host').value;
+
+  // The calendar step follows the mail provider unless it has been changed.
+  const cal = calProvider($('cd-provider').value);
+  if (cal.follow) calProviderChanged();
 }
 function emailChanged() {
+  const dom = emailDomain();
   const u = $('im-user').value.trim();
-  if ($('im-provider').value === 'custom' && u.includes('@') && !$('im-host').value)
-    $('im-host').value = 'imap.' + u.split('@')[1];
   if (u) $('cd-user').value = u;
+  if (!dom) return;
+  // Preselect by domain, but never override a choice the user already made.
+  if ($('im-provider').dataset.touched !== '1') {
+    const hit = MAIL_PROVIDERS.find(p => (p.domains || []).includes(dom));
+    if (hit) $('im-provider').value = hit.id;
+  }
+  providerChanged();
+}
+async function detectImap() {
+  const dom = emailDomain();
+  if (!dom) { alertBox('im-alert', 'warning', 'Enter your email address first.'); return; }
+  const known = MAIL_PROVIDERS.find(p => (p.domains || []).includes(dom));
+  if (known && known.blocked) {
+    alertBox('im-alert', 'danger', esc(known.blocked));
+    return;
+  }
+  busy('btn-detect', true, 'Probing…');
+  alertBox('im-alert', '', '');
+  try {
+    const r = await api('/api/imap/detect?domain=' + encodeURIComponent(dom), null, 2);
+    if (r.ok) {
+      $('im-host').value = r.host;
+      $('im-port').value = r.port || 993;
+      alertBox('im-alert', 'success',
+        `Found an IMAP server at <span class="mono">${esc(r.host)}:${r.port}</span>. ` +
+        `Enter your password and press <em>Test email</em>.` +
+        (r.banner ? `<div class="mono text-secondary mt-1">${esc(r.banner.slice(0, 90))}</div>` : ''));
+    } else {
+      alertBox('im-alert', 'warning',
+        esc(r.msg || 'no IMAP server found') +
+        (r.tried ? `<div class="mono text-secondary mt-1">tried: ${esc(r.tried.join(', '))}</div>` : ''));
+      $('im-adv').open = true;
+    }
+  } catch (e) {
+    alertBox('im-alert', 'danger', 'The device didn\'t answer — check you\'re on the setup WiFi and try again.');
+  }
+  busy('btn-detect', false);
 }
 function showChanged() {
   $('im-custom-wrap').classList.toggle('step-hidden', $('im-show').value !== 'custom');
@@ -191,6 +404,7 @@ function imapCfg() {
 async function testImap() {
   const c = imapCfg();
   if (!c.user || !c.pass) { alertBox('im-alert', 'warning', 'Enter your address and password first (or leave email out and press Next).'); return; }
+  if (!c.host) { alertBox('im-alert', 'warning', 'No IMAP host yet — press Detect, or fill it in under Advanced.'); return; }
   busy('btn-imtest', true, 'Logging in…');
   try {
     const r = await api('/api/test/imap', { method: 'POST', body: JSON.stringify(c) }, 2);
@@ -213,6 +427,24 @@ function calModeChanged() {
   $('cal-caldav-wrap').classList.toggle('step-hidden', m !== 'caldav');
   $('cal-ics-wrap').classList.toggle('step-hidden', m !== 'ics');
   alertBox('cal-alert', '', '');
+}
+function calProviderChanged() {
+  const sel = $('cd-provider');
+  let p = calProvider(sel.value);
+  // "Same as my email provider" resolves through the mail catalogue.
+  if (p.follow) {
+    const mailId = $('im-provider').value;
+    const twin = CAL_PROVIDERS.find(c => c.id === mailId && !c.follow);
+    p = twin || calProvider('custom');
+  }
+  $('cd-provider-note').textContent = p.note || '';
+  if (p.icsOnly) {
+    $('cal-ics').checked = true;
+    calModeChanged();
+    $('ics-hint').textContent = p.note || '';
+    return;
+  }
+  if (p.dav) $('cd-base').value = p.dav;
 }
 async function discover() {
   const base = $('cd-base').value.trim(), user = $('cd-user').value.trim(), pass = $('cd-pass').value;
@@ -330,7 +562,110 @@ function fillHours() {
   $('qt-start').value = 0; $('qt-end').value = 6;
 }
 
-// ---------- step 6: review + save ----------
+// ---------- step 6: store ----------
+// The store and the Blocks tab talk to the same two endpoints; this is the
+// browsing half of it, shown during setup so a new device arrives configured
+// the way its owner wants rather than only with the built-ins.
+const store = { blocks: [], cat: 'all', loaded: false };
+
+async function storeLoad(force) {
+  if (store.loaded && !force) return;
+  store.loaded = true;
+  const url = $('store-url').value.trim();
+  if (!url) { $('store-list').innerHTML = '<div class="list-group-item text-secondary small">No registry configured.</div>'; return; }
+  $('store-list').innerHTML = '<div class="list-group-item text-secondary small">Loading the store…</div>';
+  alertBox('store-alert', '', '');
+  try {
+    const r = await api('/api/registry?url=' + encodeURIComponent(url), null, 2);
+    if (!r.ok) {
+      store.loaded = false;
+      $('store-list').innerHTML = '';
+      alertBox('store-alert', 'warning', esc(r.msg || 'could not load the registry') +
+        ' — you can skip this step and add blocks later.');
+      return;
+    }
+    store.blocks = r.blocks || [];
+    alertBox('store-alert', r.sigOk ? 'success' : 'warning',
+      r.sigOk ? `Registry verified — signed by <span class="mono">${esc(r.keyid)}</span>.`
+              : 'This registry is <strong>not</strong> signed by a key this device trusts. Its blocks will be refused unless you allow unsigned blocks in the Blocks tab.');
+    storeCats();
+    storeRender();
+  } catch (e) {
+    store.loaded = false;
+    $('store-list').innerHTML = '';
+    alertBox('store-alert', 'danger', 'The device didn\'t answer — skip this step and add blocks later if it persists.');
+  }
+}
+function storeCats() {
+  const cats = ['all', ...new Set(store.blocks.map(b => b.category || 'other'))];
+  const wrap = $('store-cats');
+  wrap.innerHTML = '';
+  for (const c of cats) {
+    const b = document.createElement('button');
+    b.className = 'btn btn-sm ' + (c === store.cat ? 'btn-epaper' : 'btn-outline-secondary');
+    b.textContent = c === 'all' ? 'All' : c;
+    b.onclick = () => { store.cat = c; storeCats(); storeRender(); };
+    wrap.appendChild(b);
+  }
+}
+function storeRender() {
+  const L = $('store-list');
+  L.innerHTML = '';
+  const shown = store.blocks.filter(b => store.cat === 'all' || (b.category || 'other') === store.cat);
+  if (!shown.length) {
+    L.innerHTML = '<div class="list-group-item text-secondary small">Nothing in this category.</div>';
+  }
+  for (const b of shown) {
+    const done = state.installed.includes(b.id);
+    const d = document.createElement('div');
+    d.className = 'list-group-item';
+    const size = (b.minW && b.minH) ? `<span class="text-secondary small">${b.minW}×${b.minH} cells</span>` : '';
+    // The setup hotspot has no route to the internet, so a screenshot often
+    // will not load; it is removed rather than left as a broken image.
+    const shot = b.screenshot
+      ? `<img class="store-shot me-2" src="${esc(b.screenshot)}" alt="" onerror="this.remove()">` : '';
+    d.innerHTML =
+      `<div class="d-flex justify-content-between align-items-start gap-2">
+         <div class="d-flex align-items-start">${shot}
+           <div><b>${esc(b.name)}</b> ${size}
+             <div class="text-secondary small">${esc(b.description || '')}</div>
+             <div class="text-secondary small">${esc(b.author || '')} · v${esc(b.version || '')}</div>
+           </div>
+         </div>
+         <button class="btn btn-sm ${done ? 'btn-success' : 'btn-outline-dark'}"
+                 ${done ? 'disabled' : ''} id="store-btn-${esc(b.id)}"
+                 onclick="storeInstall('${esc(b.id)}')">${done ? 'Installed' : 'Install'}</button>
+       </div>`;
+    L.appendChild(d);
+  }
+  $('store-count').textContent = state.installed.length
+    ? `${state.installed.length} block(s) added — arrange them in the Layout tab after setup.` : '';
+}
+async function storeInstall(id) {
+  const b = store.blocks.find(x => x.id === id);
+  if (!b) return;
+  const btnId = 'store-btn-' + id;
+  busy(btnId, true, '…');
+  try {
+    const r = await api('/api/blocks/install', { method: 'POST', body: JSON.stringify({ url: b.epb }) }, 2);
+    busy(btnId, false);
+    if (r.ok) {
+      if (!state.installed.includes(id)) state.installed.push(id);
+      ed.inited = false;               // layout palette must pick the new block up
+      alertBox('store-alert', r.sigOk ? 'success' : 'warning',
+        `<strong>${esc(b.name)}</strong> installed` +
+        (r.sigOk ? ` — signature verified (${esc(r.keyid)}).` : ' — UNSIGNED.'));
+      storeRender();
+    } else {
+      alertBox('store-alert', 'danger', `${esc(b.name)}: ${esc(r.msg || 'install failed')}`);
+    }
+  } catch (e) {
+    busy(btnId, false);
+    alertBox('store-alert', 'danger', 'The device didn\'t answer — try again.');
+  }
+}
+
+// ---------- step 7: review + save ----------
 function cfg() {
   const tzSel = $('ck-tz');
   const posix = tzSel.value === 'custom' ? $('ck-tz-custom').value.trim() : tzSel.value;
@@ -350,12 +685,14 @@ function buildReview() {
   const c = cfg();
   const row = (k, v, warn) => `<tr><th class="text-secondary fw-normal">${k}</th><td>${v}${warn ? ` <span class="badge text-bg-warning">${warn}</span>` : ''}</td></tr>`;
   $('review').innerHTML =
+    row('Device', `${esc(DEV.panel)} <span class="mono">${DEV.panelW}×${DEV.panelH}</span>`) +
     row('WiFi', esc(c.wifi.ssid) || '—', !state.wifiOk && c.wifi.ssid ? 'not tested' : '') +
     row('Email', c.imap.user ? `${esc(c.imap.user)} <span class="mono">(${esc(c.imap.host)})</span>` : 'disabled') +
     row('Calendar', c.cal.mode === 'none' ? 'disabled' : `${c.cal.mode.toUpperCase()}: <span class="mono">${esc((state.calName || c.cal.url).slice(0, 60))}</span>`) +
     row('Weather', c.wx.place ? `${esc(c.wx.place)} (${c.wx.unitT === 'f' ? '°F' : '°C'})` : 'not set', c.wx.place ? '' : 'no location') +
     row('Clock', (c.clock.h24 ? '24-hour' : '12-hour') + ' · ' + esc(c.clock.tzname)) +
-    row('Refresh', `every ${c.refresh.min} min` + (c.refresh.quiet ? `, paused ${$('qt-start').selectedOptions[0].text}–${$('qt-end').selectedOptions[0].text}` : ''));
+    row('Refresh', `every ${c.refresh.min} min` + (c.refresh.quiet ? `, paused ${$('qt-start').selectedOptions[0].text}–${$('qt-end').selectedOptions[0].text}` : '')) +
+    row('Blocks', state.installed.length ? esc(state.installed.join(', ')) : 'built-ins only');
 }
 async function finish() {
   const c = cfg();
@@ -365,20 +702,25 @@ async function finish() {
     const r = await api('/api/save', { method: 'POST', body: JSON.stringify(c) }, 3);
     if (!r.ok) { alertBox('fin-alert', 'danger', esc(r.msg || 'save failed')); busy('btn-finish', false); return; }
     await api('/api/finish', { method: 'POST' }, 1).catch(() => {});   // device reboots mid-response
-    go(7);
+    go(8);
   } catch (e) {
     // save may have gone through even if the reply got lost
-    go(7);
+    go(8);
   }
 }
 
 // ---------- init ----------
 window.addEventListener('DOMContentLoaded', async () => {
-  fillTz(); fillHours(); providerChanged(); showChanged();
+  fillProviderSelect($('im-provider'), MAIL_PROVIDERS);
+  fillProviderSelect($('cd-provider'), CAL_PROVIDERS);
+  $('im-provider').addEventListener('change', () => { $('im-provider').dataset.touched = '1'; });
+  fillTz(); fillHours(); providerChanged(); calProviderChanged(); showChanged();
   try {
     const st = await api('/api/state', null, 1);
     if (st && st.haveConfig) $('hdr-sub').textContent = 'Settings mode — existing configuration loaded';
-    if (st && st.panelW) setPanelAspect(st.panelW, st.panelH);
+    // device{} is the current shape; the flat panelW/panelH keep this page
+    // working against firmware that predates it.
+    applyDevice(Object.assign({ fw: st && st.fw, ap: st && st.ap }, (st && st.device) || {}));
     if (st && st.cfg) prefill(st.cfg);
   } catch (e) {}
 });
@@ -387,8 +729,16 @@ window.addEventListener('DOMContentLoaded', async () => {
 function setPanelAspect(w, h) {
   if (!w || !h) return;
   CY = Math.max(16, Math.round((560 * h / w) / ROWS));
+  CX = Math.round(560 / COLS);
   const cv = $('ed-canvas');
-  if (cv) cv.style.height = (CY * ROWS) + 'px';
+  if (cv) {
+    cv.style.width = (CX * COLS) + 'px';
+    cv.style.height = (CY * ROWS) + 'px';
+    // Cell guides follow the real grid instead of a baked-in 16x12.
+    cv.style.backgroundImage =
+      `repeating-linear-gradient(#0000 0 ${CY - 1}px,#00000014 ${CY - 1}px ${CY}px),` +
+      `repeating-linear-gradient(90deg,#0000 0 ${CX - 1}px,#00000014 ${CX - 1}px ${CX}px)`;
+  }
 }
 function prefill(c) {
   try {
@@ -397,7 +747,13 @@ function prefill(c) {
       $('im-user').value = c.imap.user; $('im-host').value = c.imap.host || '';
       $('im-port').value = c.imap.port || 993; $('im-folder').value = c.imap.folder || 'INBOX';
       $('im-show').value = c.imap.show || 'unseen'; $('im-count').value = c.imap.count || 5;
-      $('im-custom').value = c.imap.custom || ''; $('im-provider').value = 'custom'; showChanged();
+      $('im-custom').value = c.imap.custom || '';
+      // Stored settings are already resolved to a host, so show the entry that
+      // matches it rather than re-deriving one from the address.
+      const hit = MAIL_PROVIDERS.find(p => p.host && p.host === c.imap.host);
+      $('im-provider').value = hit ? hit.id : 'custom';
+      $('im-provider').dataset.touched = '1';
+      providerChanged(); showChanged();
     }
     if (c.cal && c.cal.mode === 'ics') { $('cal-ics').checked = true; $('ics-url').value = c.cal.url || ''; calModeChanged(); }
     else if (c.cal && c.cal.mode === 'caldav') { $('cd-base').value = c.cal.url || ''; $('cd-user').value = c.cal.user || ''; state.calHref = c.cal.url || ''; }
@@ -429,8 +785,8 @@ document.querySelectorAll('#mainTabs a').forEach(a => a.onclick = (e) => {
 });
 
 // ================= layout editor =================
-const COLS = 16, ROWS = 12, CX = 35;   // editor cells; CY follows the panel's aspect
-let CY = 28;                           // (800x480 default: 35x28 px per cell)
+// Grid dimensions and cell pixels come from the device (see applyDevice).
+let COLS = 16, ROWS = 12, CX = 35, CY = 28;
 const BUILTINS = {
   'core-clock':      { name: 'Clock',          minW: 5, minH: 2 },
   'core-datestatus': { name: 'Date & status',  minW: 5, minH: 2 },
@@ -582,7 +938,7 @@ async function edPreview() {
   busy('btn-preview', true, 'Saving & rendering…');
   try {
     const r = await api('/api/preview', { method: 'POST', body: JSON.stringify(ed.layout) }, 1);
-    if (r.ok) alertBox('ed-alert', 'info', 'Layout saved — the panel is drawing it now (~25 s of flashing).');
+    if (r.ok) alertBox('ed-alert', 'info', `Layout saved — the panel is drawing it now (about ${DEV.refreshSec} s).`);
     else alertBox('ed-alert', 'danger', esc(r.msg || 'Layout rejected.'));
   } catch (e) { alertBox('ed-alert', 'danger', 'Device didn\'t answer.'); }
   setTimeout(() => busy('btn-preview', false), 3000);

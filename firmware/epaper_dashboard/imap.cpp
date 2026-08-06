@@ -76,6 +76,9 @@ void imapParseHeaderBlock(const char* block, EmailT& out) {
 // ---------------- protocol ----------------
 
 static const uint32_t IMAP_TIMEOUT_MS = 12000;
+// Auto-detect walks several candidate hosts, so each probe has to give up
+// quickly or the wizard appears to hang.
+static const uint32_t IMAP_PROBE_MS = 4000;
 
 class ImapConn {
  public:
@@ -144,6 +147,40 @@ static void fail(ImapResult& r, const char* stage, const char* msg) {
   r.ok = false;
   strlcpy(r.stage, stage, sizeof(r.stage));
   strlcpy(r.msg, msg, sizeof(r.msg));
+}
+
+// Connect and read the greeting only — enough to tell "an IMAP server
+// answers here" from "nothing does", without any credentials. Lets the setup
+// page find a host for a domain it has never heard of, so provider support
+// is not limited to a hard-coded list.
+bool imapProbe(const char* host, uint16_t port, char* banner, size_t bannerLen) {
+  if (banner && bannerLen) banner[0] = 0;
+  if (!host || !host[0]) return false;
+  WiFiClientSecure cli;
+  cli.setInsecure();
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  cli.setTimeout(IMAP_PROBE_MS);
+#else
+  cli.setTimeout(IMAP_PROBE_MS / 1000);
+#endif
+  if (!cli.connect(host, port)) return false;
+
+  String line;
+  uint32_t t0 = millis();
+  bool got = false;
+  while (millis() - t0 < IMAP_PROBE_MS && !got) {
+    while (cli.available()) {
+      char ch = (char)cli.read();
+      if (ch == '\n') { got = true; break; }
+      if (ch != '\r' && line.length() < 200) line += ch;
+    }
+    if (!cli.connected() && !cli.available()) break;
+    if (!got) delay(5);
+  }
+  cli.stop();
+  if (!got || !line.startsWith("* OK")) return false;
+  if (banner && bannerLen) strlcpy(banner, line.c_str(), bannerLen);
+  return true;
 }
 
 bool imapFetch(const Settings& s, ImapResult& r) {

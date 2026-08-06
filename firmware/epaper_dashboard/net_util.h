@@ -32,3 +32,7 @@ time_t icsStampToEpoch(const char* s, bool* isDateOnly, bool* isUtc);
 bool splitUrl(const String& url, String& host, uint16_t& port, String& path, bool& tls);
 // Resolve an href (absolute URL or absolute path) against a base URL.
 String resolveHref(const String& baseUrl, const String& href);
+// True only for a public DNS mail domain. Guards IMAP auto-detection, which
+// would otherwise let the setup page aim connection attempts at the LAN:
+// rejects .local, localhost and bare IPv4 literals.
+bool mailDomainAllowed(const String& d);

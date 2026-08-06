@@ -7,7 +7,11 @@ jobs:
   host-verification:
     runs-on: ubuntu-latest
     steps:
+      # registry/ (the epaper-blocks submodule) provides the signed .epb the
+      # signature round-trip verifies.
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Cache host deps (incl. built mbedTLS)
         uses: actions/cache@v4
         with:

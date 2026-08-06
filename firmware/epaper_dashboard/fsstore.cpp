@@ -1,4 +1,5 @@
 #include "fsstore.h"
+#include "config.h"
 #include <LittleFS.h>
 
 static bool s_fsOk = false;
@@ -27,7 +28,8 @@ static bool writeFileStr(const char* path, const char* data, size_t len) {
 
 // ---------------- layout ----------------
 
-// Classic screen as the default layout. Grid: 16 x 12 (50 x 40 px cells).
+// Classic screen as the default layout, in GRID_COLS x GRID_ROWS cells
+// (50 x 40 px each on an 800x480 panel, scaled on any other).
 const char* layoutDefaultJson() {
   return
     "[{\"inst\":\"clk\",\"block\":\"core-clock\",\"x\":0,\"y\":0,\"w\":7,\"h\":3},"
@@ -74,8 +76,8 @@ bool layoutSave(const char* json, size_t len, char* err, size_t errLen) {
     }
     int x = it["x"] | -1, y = it["y"] | -1, w = it["w"] | 0, h = it["h"] | 0;
     const char* id = it["block"] | "";
-    if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > 16 || y + h > 12) {
-      snprintf(err, errLen, "block '%s' out of the 16x12 grid", id);
+    if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > GRID_COLS || y + h > GRID_ROWS) {
+      snprintf(err, errLen, "block '%s' out of the %dx%d grid", id, GRID_COLS, GRID_ROWS);
       return false;
     }
     if (!isBuiltinId(id)) {

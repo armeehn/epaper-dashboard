@@ -84,14 +84,36 @@ static void hRoot() { sendGz(ASSET_INDEX, ASSET_INDEX_LEN, "text/html"); }
 static void hCss() { sendGz(ASSET_BOOTSTRAP, ASSET_BOOTSTRAP_LEN, "text/css"); }
 static void hJs() { sendGz(ASSET_APPJS, ASSET_APPJS_LEN, "application/javascript"); }
 
+// Everything the setup page needs in order to describe THIS device rather
+// than assume a particular panel, board or chip. The page has no hardware
+// constants of its own; adding a panel preset to config.h is enough to make
+// the UI describe it correctly.
 static void hState() {
   JsonDocument doc;
   doc["ap"] = PORTAL_AP_NAME;
   doc["fw"] = FW_VERSION;
-  doc["panelW"] = s_panelW;
-  doc["panelH"] = s_panelH;
   doc["haveConfig"] = g_set.valid();
   doc["staConnected"] = WiFi.status() == WL_CONNECTED;
+
+  JsonObject dev = doc["device"].to<JsonObject>();
+  dev["panel"] = PANEL_NAME;
+  dev["panelW"] = s_panelW;
+  dev["panelH"] = s_panelH;
+  dev["colors"] = EPD_IS_3C ? 3 : 2;
+  dev["refreshSec"] = PANEL_REFRESH_S;
+  dev["board"] = BOARD_NAME;
+  dev["chip"] = CHIP_NAME;
+  dev["cols"] = GRID_COLS;
+  dev["rows"] = GRID_ROWS;
+  dev["hostname"] = DEVICE_HOSTNAME;
+  dev["apIp"] = WiFi.softAPIP().toString();
+  dev["setupPin"] = SETUP_BUTTON_PIN;
+  dev["registry"] = DEFAULT_REGISTRY_URL;
+
+  // Also kept flat: the browser caches app.js for an hour, so right after an
+  // OTA update a stale copy of the page may still be reading these.
+  doc["panelW"] = s_panelW;
+  doc["panelH"] = s_panelH;
   if (g_set.valid()) {
     JsonDocument cfg;
     settingsToJson(cfg);
@@ -169,6 +191,49 @@ static void hWifiStatus() {
       break;
     default: doc["state"] = "idle";
   }
+  sendJson(doc);
+}
+
+// GET /api/imap/detect?domain=example.com
+// Walks the conventional host names for a mail domain and reports the first
+// one that answers with an IMAP greeting. This is what lets the wizard set up
+// a provider nobody has added to any list.
+static void hImapDetect() {
+  JsonDocument doc;
+  if (WiFi.status() != WL_CONNECTED) {
+    doc["ok"] = false;
+    doc["msg"] = "finish the WiFi step first - the device has no internet yet";
+    sendJson(doc);
+    return;
+  }
+  String domain = server.arg("domain");
+  domain.toLowerCase();
+  domain.trim();
+  int at = domain.indexOf('@');
+  if (at >= 0) domain = domain.substring(at + 1);
+  if (!mailDomainAllowed(domain)) {
+    doc["ok"] = false;
+    doc["msg"] = "that doesn't look like a mail domain";
+    sendJson(doc);
+    return;
+  }
+  const char* prefixes[] = { "imap.", "mail.", "", "imap4.", "secure." };
+  char banner[120];
+  JsonArray tried = doc["tried"].to<JsonArray>();
+  for (const char* pfx : prefixes) {
+    String host = String(pfx) + domain;
+    tried.add(host);
+    if (imapProbe(host.c_str(), 993, banner, sizeof(banner))) {
+      doc["ok"] = true;
+      doc["host"] = host;
+      doc["port"] = 993;
+      doc["banner"] = banner;
+      sendJson(doc);
+      return;
+    }
+  }
+  doc["ok"] = false;
+  doc["msg"] = "no IMAP server answered on the usual names - enter the host under Advanced";
   sendJson(doc);
 }
 
@@ -633,6 +698,7 @@ static void registerRoutes(bool captive) {
   server.on("/api/wifi", HTTP_POST, hWifiJoin);
   server.on("/api/wifi/status", HTTP_GET, hWifiStatus);
   server.on("/api/test/imap", HTTP_POST, hTestImap);
+  server.on("/api/imap/detect", HTTP_GET, hImapDetect);
   server.on("/api/caldav/discover", HTTP_POST, hDiscover);
   server.on("/api/test/cal", HTTP_POST, hTestCal);
   server.on("/api/geocode", HTTP_GET, hGeocode);
@@ -684,7 +750,7 @@ void portalRun(PortalReason reason) {
   }
   dns.setErrorReplyCode(DNSReplyCode::NoError);
   dns.start(53, "*", WiFi.softAPIP());
-  MDNS.begin("epaper-dashboard");
+  MDNS.begin(DEVICE_HOSTNAME);
 
   registerRoutes(true);
   server.begin();
@@ -705,12 +771,12 @@ void portalRun(PortalReason reason) {
 }
 
 void portalServeLan(uint32_t idleMs, uint32_t maxMs) {
-  MDNS.begin("epaper-dashboard");
+  MDNS.begin(DEVICE_HOSTNAME);
   registerRoutes(false);
   server.begin();
   touch();
   uint32_t start = millis();
-  Serial.printf("LAN editor window: http://%s/ (and http://epaper-dashboard.local/), "
+  Serial.printf("LAN editor window: http://%s/ (and http://" DEVICE_HOSTNAME ".local/), "
                 "closes after %lus idle\n",
                 WiFi.localIP().toString().c_str(), (unsigned long)(idleMs / 1000));
   while (millis() - s_lastActivity < idleMs && millis() - start < maxMs) {
