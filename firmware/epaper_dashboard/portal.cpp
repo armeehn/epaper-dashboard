@@ -18,6 +18,8 @@
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
+#include <memory>
+#include <new>
 #include <Update.h>
 #include <esp_ota_ops.h>
 #include <mbedtls/sha256.h>
@@ -407,19 +409,22 @@ static void hBlocksGet() {
   JsonDocument out;
   out["allowUnsigned"] = g_set.allowUnsigned;
   JsonArray arr = out["blocks"].to<JsonArray>();
+  // One heap-allocated scratch descriptor, reused for every block: a BlockDef
+  // is ~4 KB and this handler runs on the 8 KB Arduino loop task, so keeping
+  // one on the stack overflowed it (blank Layout/Blocks tabs, then a reboot).
+  std::unique_ptr<BlockDef> def(new (std::nothrow) BlockDef());
   for (JsonObjectConst b : idx.as<JsonArrayConst>()) {
     JsonObject o = arr.add<JsonObject>();
     o["id"] = b["id"]; o["name"] = b["name"]; o["author"] = b["author"];
     o["version"] = b["version"]; o["sigOk"] = b["sigOk"]; o["keyid"] = b["keyid"];
-    BlockDef def;
-    if (blockLoadDef(b["id"] | "", def)) {
-      o["minW"] = def.minW; o["minH"] = def.minH;
+    if (def && blockLoadDef(b["id"] | "", *def)) {
+      o["minW"] = def->minW; o["minH"] = def->minH;
       JsonArray ps = o["params"].to<JsonArray>();
-      for (int i = 0; i < def.nParams; i++) {
+      for (int i = 0; i < def->nParams; i++) {
         JsonObject p = ps.add<JsonObject>();
-        p["key"] = def.params[i].key; p["label"] = def.params[i].label;
-        p["type"] = def.params[i].type; p["default"] = def.params[i].defval;
-        p["choices"] = def.params[i].choices;
+        p["key"] = def->params[i].key; p["label"] = def->params[i].label;
+        p["type"] = def->params[i].type; p["default"] = def->params[i].defval;
+        p["choices"] = def->params[i].choices;
       }
     }
   }

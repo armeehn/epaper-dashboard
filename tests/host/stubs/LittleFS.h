@@ -33,10 +33,12 @@ class LittleFSClass {
   std::string root = "/tmp/fsroot";
   bool begin(bool formatOnFail = false) {
     (void)formatOnFail;
-    mkdir(root.c_str(), 0777);
-    mkdir((root + "/b").c_str(), 0777);
+    ::mkdir(root.c_str(), 0777);
     return true;
   }
+  // Mirrors FS::mkdir on the device; /b is created through this path now, so
+  // the host exercises the same directory handling the firmware relies on.
+  bool mkdir(const char* path) { return ::mkdir((root + path).c_str(), 0777) == 0; }
   File open(const char* path, const char* mode = "r") {
     std::string p = root + path;
     return File(fopen(p.c_str(), mode));

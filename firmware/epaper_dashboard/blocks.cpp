@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <new>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
@@ -29,7 +30,11 @@ static bool idOk(const char* s) {
 }
 
 bool blockParse(const char* json, size_t len, BlockDef& out, char* err, size_t errLen) {
-  out = BlockDef();
+  // Reset in place. `out = BlockDef()` would build a 4 KB temporary on the
+  // stack first, and this runs inside portal request handlers on the 8 KB
+  // Arduino loop task - see the stack budget in tests/host/run_tests.sh.
+  out.~BlockDef();
+  new (&out) BlockDef();
   if (len > BLK_MAX_DESC) {
     snprintf(err, errLen, "descriptor too large (%u > %u bytes)", (unsigned)len, BLK_MAX_DESC);
     return false;
