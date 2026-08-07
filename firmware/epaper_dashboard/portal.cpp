@@ -489,7 +489,7 @@ static void hRegistry() {
   String body;
   char err[80];
   JsonDocument doc;
-  if (!httpGetText(server.arg("url"), body, 24576, err, sizeof(err))) {
+  if (!httpGetText(server.arg("url"), body, REGISTRY_MAX_BYTES, err, sizeof(err))) {
     doc["ok"] = false;
     doc["msg"] = err;
     sendJson(doc);
@@ -498,9 +498,17 @@ static void hRegistry() {
   // index may be a signed epb envelope or bare JSON
   String payload;
   EpbInfo info;
-  if (epbOpen(body.c_str(), body.length(), payload, info)) {
+  if (epbOpen(body.c_str(), body.length(), payload, info, REGISTRY_MAX_PAYLOAD)) {
     doc["sigOk"] = info.sigOk;
     doc["keyid"] = info.keyid;
+  } else if (info.envelope) {
+    // A real envelope we could not open. Falling through to the bare-JSON
+    // path would parse the ENVELOPE instead of its payload and report the
+    // useless "not a block index"; say what actually went wrong.
+    doc["ok"] = false;
+    doc["msg"] = info.err;
+    sendJson(doc);
+    return;
   } else {
     payload = body;
     doc["sigOk"] = false;

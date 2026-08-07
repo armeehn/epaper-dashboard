@@ -123,8 +123,13 @@ bool blockInstall(const char* epbJson, size_t len, bool allowUnsigned,
   }
   String payload;
   EpbInfo info;
-  bool isEnvelope = epbOpen(epbJson, len, payload, info);
+  bool isEnvelope = epbOpen(epbJson, len, payload, info, BLK_MAX_DESC);
   if (!isEnvelope) {
+    if (info.envelope) {   // an .epb we could not open — don't parse it as one
+      if (infoOut) *infoOut = info;
+      strlcpy(err, info.err, errLen);
+      return false;
+    }
     // maybe a bare block.json (unsigned)
     payload = String();
     payload.reserve(len);

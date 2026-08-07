@@ -181,3 +181,13 @@
 // by trusted_keys.h.
 #define DEFAULT_REGISTRY_URL \
   "https://raw.githubusercontent.com/armeehn/epaper-blocks/main/index.json"
+
+// An index is the same signed .epb envelope as a block, but it describes
+// EVERY block in the registry, so it is many times larger than the
+// BLK_MAX_DESC cap that bounds a single descriptor. These two are halves of
+// one limit: base64 expands 4:3, so a payload decoded from an envelope that
+// passed the download cap can never exceed the payload cap — the download is
+// always the binding constraint, and growing the registry cannot silently
+// start failing the decode.
+#define REGISTRY_MAX_BYTES   24576
+#define REGISTRY_MAX_PAYLOAD ((REGISTRY_MAX_BYTES * 3) / 4)
