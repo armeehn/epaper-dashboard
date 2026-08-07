@@ -98,3 +98,12 @@ presets. Contributions welcome: **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 [MIT](LICENSE) — © sasha zero. Fonts: DejaVu; UI: Bootstrap (MIT). See
 [THIRD_PARTY.md](THIRD_PARTY.md).
+
+---
+
+## Brand
+
+This project follows the [Riposte Laboratories design system](https://github.com/armeehn/riposte-brand)
+in its documentation. The contributor-facing `web/` UI **deliberately stays on Bootstrap** so
+outside contributors can read and patch it without learning a house design system first —
+see [`BRAND.md`](BRAND.md) for that decision and its reasoning before opening a restyle PR.
