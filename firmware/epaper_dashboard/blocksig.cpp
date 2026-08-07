@@ -42,7 +42,8 @@ bool epbVerifySig(const uint8_t* payload, size_t payloadLen,
   return true;
 }
 
-bool epbOpen(const char* envJson, size_t len, String& payloadOut, EpbInfo& info) {
+bool epbOpen(const char* envJson, size_t len, String& payloadOut, EpbInfo& info,
+             size_t maxPayload) {
   info = EpbInfo();
   JsonDocument doc;
   if (deserializeJson(doc, envJson, len)) {
@@ -55,14 +56,26 @@ bool epbOpen(const char* envJson, size_t len, String& payloadOut, EpbInfo& info)
     strlcpy(info.err, "not an epb1 envelope", sizeof(info.err));
     return false;
   }
-  // transient heap buffer (rarely called; keeps 4 KB out of static RAM)
-  uint8_t* payload = (uint8_t*)malloc(BLK_MAX_DESC + 4);
+  info.envelope = true;
+  // Size the transient buffer from the base64 length (4 chars -> at most 3
+  // bytes) rather than from the cap, so opening a 4 KB descriptor never has
+  // to allocate the largest index we are willing to accept.
+  size_t b64len = strlen(payloadB64);
+  size_t maxDecoded = (b64len / 4) * 3 + 3;
+  // Up to 2 of those bytes are padding, so reject here only when even the
+  // smallest possible decode overruns the cap; plen below is authoritative.
+  if (maxDecoded > maxPayload + 2) {
+    snprintf(info.err, sizeof(info.err), "payload too large (cap %u bytes)",
+             (unsigned)maxPayload);
+    return false;
+  }
+  uint8_t* payload = (uint8_t*)malloc(maxDecoded + 1);
   if (!payload) {
     strlcpy(info.err, "out of memory", sizeof(info.err));
     return false;
   }
-  int plen = b64decode(payloadB64, strlen(payloadB64), payload, BLK_MAX_DESC + 3);
-  if (plen <= 0 || plen > BLK_MAX_DESC) {
+  int plen = b64decode(payloadB64, (int)b64len, payload, (int)maxDecoded);
+  if (plen <= 0 || (size_t)plen > maxPayload) {
     strlcpy(info.err, "payload empty or too large", sizeof(info.err));
     free(payload);
     return false;

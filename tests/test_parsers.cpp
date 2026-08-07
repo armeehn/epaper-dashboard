@@ -13,6 +13,7 @@
 #include "../firmware/epaper_dashboard/blocksig.h"
 #include "../firmware/epaper_dashboard/trusted_keys.h"
 #include "../firmware/epaper_dashboard/fsstore.h"
+#include "../firmware/epaper_dashboard/config.h"
 #include <LittleFS.h>
 
 static int passed = 0, failed = 0;
@@ -397,7 +398,7 @@ static void testEpbAndStore() {
   CHECK(epb.length() > 100, "epb file present");
 
   String payload; EpbInfo info;
-  CHECK(epbOpen(epb.c_str(), epb.length(), payload, info), "envelope parses");
+  CHECK(epbOpen(epb.c_str(), epb.length(), payload, info, BLK_MAX_DESC), "envelope parses");
   CHECK(info.sigPresent && info.sigOk, "REAL ECDSA signature verifies");
   // Tied to the anchor rather than a literal: rotating the registry key must
   // update trusted_keys.h and the submodule together, never just one.
@@ -408,7 +409,7 @@ static void testEpbAndStore() {
   int pi = bad.indexOf("\"payload\"") + 15;
   bad[pi + 20] = bad[pi + 20] == 'A' ? 'B' : 'A';
   String p2; EpbInfo i2;
-  if (epbOpen(bad.c_str(), bad.length(), p2, i2)) CHECK(!i2.sigOk, "tampered payload rejected");
+  if (epbOpen(bad.c_str(), bad.length(), p2, i2, BLK_MAX_DESC)) CHECK(!i2.sigOk, "tampered payload rejected");
   else CHECK(true, "tampered payload rejected (parse)");
 
   char err[96]; EpbInfo i3;
@@ -448,6 +449,41 @@ static void testEpbAndStore() {
   CHECK_EQ((int)(doc[0]["x"] | -1), 4, "rejected save changed nothing");
 }
 
+// Regression: the store's "Load" said "not a block index" for the real,
+// correctly signed registry. An index is the same .epb envelope as a block,
+// so it was opened with BLK_MAX_DESC — a cap meant for ONE descriptor. Once
+// the registry passed 4 KB decoded, epbOpen failed, the portal fell back to
+// parsing the envelope as bare JSON, and reported the format mismatch it
+// found there. The published index was fine the whole time.
+static void testRegistryIndex() {
+  String idx = ([]{ FILE* f = fopen("registry/index.json", "rb");
+    String s; if (f) { int c; while ((c = fgetc(f)) != EOF) s += (char)c; fclose(f); } return s; })();
+  CHECK(idx.length() > 1000, "registry index present");
+
+  String payload; EpbInfo info;
+  CHECK(epbOpen(idx.c_str(), idx.length(), payload, info, REGISTRY_MAX_PAYLOAD),
+        "index opens under the registry cap");
+  CHECK(info.sigPresent && info.sigOk, "index signature verifies");
+
+  JsonDocument d;
+  CHECK(!deserializeJson(d, payload), "index payload is JSON");
+  CHECK_STR(d["format"] | "", "epb-index1", "payload is an epb-index1");
+  CHECK((int)d["blocks"].as<JsonArrayConst>().size() > 0, "index lists blocks");
+
+  // The cap still bounds the decode, and a rejected envelope stays flagged as
+  // an envelope so callers report the size error instead of falling back to
+  // bare-JSON parsing (which is what produced the misleading message).
+  String tiny; EpbInfo iSmall;
+  CHECK(!epbOpen(idx.c_str(), idx.length(), tiny, iSmall, 64), "cap is enforced");
+  CHECK(iSmall.envelope, "oversized envelope still reports as an envelope");
+
+  // An index must be allowed to be larger than a single descriptor — the two
+  // caps existing separately is the whole point.
+  CHECK(REGISTRY_MAX_PAYLOAD > BLK_MAX_DESC, "index cap exceeds descriptor cap");
+  // ...and no envelope small enough to download can be too big to decode.
+  CHECK(REGISTRY_MAX_PAYLOAD >= (REGISTRY_MAX_BYTES * 3) / 4, "payload cap covers the download cap");
+}
+
 int main(int, char**) {
   setenv("TZ", "PST8PDT,M3.2.0,M11.1.0", 1);
   tzset();
@@ -458,6 +494,7 @@ int main(int, char**) {
   testSettings();
   testBlocks();
   testEpbAndStore();
+  testRegistryIndex();
   printf("\n%d passed, %d failed\n", passed, failed);
   return failed ? 1 : 0;
 }

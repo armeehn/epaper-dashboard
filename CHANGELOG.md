@@ -33,6 +33,15 @@ on `main`.
 - README trimmed by ~40%; detail lives in `docs/`.
 
 ### Fixed
+- **Loading the block registry failed with "not a block index".** An index is
+  the same signed `.epb` envelope as a block, so it was being opened with
+  `BLK_MAX_DESC` — the 4 KB cap for a *single* descriptor. At 13 blocks the
+  index decodes to 5.7 KB, so the open failed, the portal fell back to parsing
+  the envelope as a bare index and reported the format mismatch it found
+  there. `epbOpen()` now takes the cap as an argument and the registry passes
+  `REGISTRY_MAX_PAYLOAD`, derived from the download cap so the two can't drift.
+  An envelope that fails to open is no longer silently reparsed as bare JSON;
+  the real error is reported instead.
 - Block author strings were 29 characters against a 28-byte field and were
   being truncated on-device to `epaper-dashboard contribut`.
 
