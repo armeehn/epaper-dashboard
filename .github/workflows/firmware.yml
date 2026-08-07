@@ -1,9 +1,13 @@
 name: firmware
+# Branch pushes are covered by the pull_request trigger, so `push` is limited to
+# main and release tags. Otherwise every commit on a PR branch runs the 7-panel
+# matrix twice. Use the Actions tab ("Run workflow") to build a branch with no PR.
 on:
   push:
-    branches: ['**']
+    branches: [main]
     tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: firmware-${{ github.ref }}
@@ -40,10 +44,10 @@ jobs:
             desc: 'Waveshare 7.5" V1 — 640x384, black/white'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Cache Arduino core & libraries
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.arduino15
@@ -140,7 +144,7 @@ jobs:
           EOF
 
       - name: Upload firmware artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: epaper-dashboard-${{ matrix.slug }}
           path: dist/
