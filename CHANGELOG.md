@@ -33,6 +33,22 @@ on `main`.
 - README trimmed by ~40%; detail lives in `docs/`.
 
 ### Fixed
+- **The Layout, Blocks and Update tabs could not reach the device.** Portal
+  requests are served from `setup()` on the Arduino loop task, whose stack is
+  8 KB, and a `BlockDef` is ~4 KB. `GET /api/blocks` held one on the stack and
+  called `blockParse()`, which built a second as a temporary — a 9.3 KB chain
+  that overflowed the stack and panicked the device mid-response. Installing a
+  block was worse at 10.5 KB. The browser saw the connection drop, so all three
+  tabs reported the device as unreachable: the Layout tab loads `/api/blocks`
+  too, and the reboot took the whole portal down, so the Update tab's next
+  request failed as well. These descriptors are heap-allocated now (the render
+  path already did this), taking the two chains to 1.2 KB and 2.4 KB.
+- `tests/host/run_tests.sh` now measures frame sizes with `-fstack-usage` and
+  fails if anything in `portal.cpp`, `blocks.cpp` or `fsstore.cpp` exceeds a
+  2560-byte budget, so a large stack local cannot silently return.
+- Block installs now `mkdir` `/b` on mount. LittleFS, unlike the SPIFFS it
+  replaced, has real directories and will not create a missing parent on
+  open-for-write, which failed installs with "flash write failed".
 - **Loading the block registry failed with "not a block index".** An index is
   the same signed `.epb` envelope as a block, so it was being opened with
   `BLK_MAX_DESC` — the 4 KB cap for a *single* descriptor. At 13 blocks the

@@ -1,5 +1,7 @@
 #include "fsstore.h"
 #include "config.h"
+#include <memory>
+#include <new>
 #include <LittleFS.h>
 
 static bool s_fsOk = false;
@@ -7,6 +9,10 @@ static bool s_fsOk = false;
 bool fsStoreBegin() {
   if (s_fsOk) return true;
   s_fsOk = LittleFS.begin(true);   // format on first mount
+  // Block descriptors live in /b/. Unlike SPIFFS, LittleFS has real
+  // directories and will not create a missing parent on open-for-write, so
+  // make it once here; mkdir on an existing directory is a no-op.
+  if (s_fsOk) LittleFS.mkdir("/b");
   return s_fsOk;
 }
 
@@ -149,7 +155,14 @@ bool blockInstall(const char* epbJson, size_t len, bool allowUnsigned,
     }
   }
 
-  BlockDef def;
+  // Heap, not stack: a BlockDef is ~4 KB and this runs inside a portal request
+  // handler on the 8 KB Arduino loop task (see tests/host/run_tests.sh).
+  std::unique_ptr<BlockDef> defp(new (std::nothrow) BlockDef());
+  if (!defp) {
+    strlcpy(err, "out of memory", errLen);
+    return false;
+  }
+  BlockDef& def = *defp;
   if (!blockParse(payload.c_str(), payload.length(), def, err, errLen)) return false;
   if (def.builtin) {
     strlcpy(err, "builtin ids are reserved", errLen);

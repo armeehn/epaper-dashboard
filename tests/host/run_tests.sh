@@ -61,6 +61,31 @@ $CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_583_B_V2 \
 $CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_75_BW_V1 -DBOARD_GENERIC_ESP32 \
   "$FW/epaper_dashboard.ino" -o "$BUILD/ino_bw_v1.o"
 
+echo "== stack budget (portal handlers run on the 8 KB Arduino loop task) =="
+# Portal requests are served from setup() on loopTask, whose stack is 8192
+# bytes -- and the whole call chain (WebServer parse -> handler -> parser) has
+# to fit. A BlockDef is ~4 KB, so one on the stack is already most of the
+# budget; two in a chain overflowed it and rebooted the device mid-request,
+# which is what "the portal can't reach the device" looked like from the
+# browser. Frame sizes here are the host compiler's, not xtensa's, so this is
+# a relative regression guard rather than an absolute measurement.
+STACK_MAX=2560
+rm -f "$BUILD"/*.su
+(cd "$BUILD" && $CXX -Wall -Wextra -Wno-unused-parameter -fstack-usage \
+   -c "$FW/portal.cpp" -o "$BUILD/portal_su.o" \
+   && $CXX -Wall -Wextra -Wno-unused-parameter -fstack-usage \
+   -c "$FW/fsstore.cpp" -o "$BUILD/fsstore_su.o" \
+   && $CXX -Wall -Wextra -Wno-unused-parameter -fstack-usage \
+   -c "$FW/blocks.cpp" -o "$BUILD/blocks_su.o")
+over=$(cat "$BUILD"/*.su | awk -F'\t' -v m="$STACK_MAX" '$2+0 > m {print "   " $2 " bytes  " $1}' | sort -rn)
+if [ -n "$over" ]; then
+  echo "FAIL: these frames exceed the ${STACK_MAX}-byte budget:" >&2
+  echo "$over" >&2
+  echo "   (heap-allocate large structs such as BlockDef instead)" >&2
+  exit 1
+fi
+echo "   all portal/blocks/fsstore frames within ${STACK_MAX} bytes"
+
 echo "== unit tests (incl. real mbedTLS signature verification) =="
 $CXX -Wall -Wno-unused-parameter -o "$BUILD/test_parsers" "$ROOT/tests/test_parsers.cpp" \
   "$FW/net_util.cpp" "$FW/ics.cpp" "$FW/imap.cpp" "$FW/caldav.cpp" \
