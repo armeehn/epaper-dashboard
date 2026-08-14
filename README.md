@@ -78,7 +78,8 @@ bash tests/host/run_tests.sh
 
 That strict-compiles every translation unit against the real libraries, builds
 alternate-panel variants, emulates the Arduino IDE's prototype-hoisting quirk,
-and runs 126 unit checks including a real mbedTLS signature round-trip — the
+and runs 148 unit checks including a real mbedTLS signature round-trip and a
+conformance pass that installs every block the published registry offers — the
 same gate CI runs, alongside a workflow that builds binaries for all seven
 presets. Contributions welcome: **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 

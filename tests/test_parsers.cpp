@@ -17,6 +17,19 @@
 #include <LittleFS.h>
 
 static int passed = 0, failed = 0;
+
+// Read a whole file into a String. Tests read fixtures out of registry/, the
+// epaper-blocks submodule, so a missing file is a broken checkout rather than
+// something to tolerate quietly -- callers check the length.
+static String slurp(const char* path) {
+  String s;
+  FILE* f = fopen(path, "rb");
+  if (!f) return s;
+  int c;
+  while ((c = fgetc(f)) != EOF) s += (char)c;
+  fclose(f);
+  return s;
+}
 #define CHECK(cond, name) do { \
   if (cond) { passed++; } \
   else { failed++; printf("FAIL: %s (line %d)\n", name, __LINE__); } \
@@ -393,8 +406,7 @@ static void testEpbAndStore() {
 
   // registry/ is the epaper-blocks submodule; run_tests.sh refuses to start
   // without it, so an empty read here means a genuinely broken fixture.
-  String epb = ([]{ FILE* f = fopen("registry/blocks/crypto-price/crypto-price.epb", "rb");
-    String s; if (f) { int c; while ((c = fgetc(f)) != EOF) s += (char)c; fclose(f); } return s; })();
+  String epb = slurp("registry/blocks/crypto-price/crypto-price.epb");
   CHECK(epb.length() > 100, "epb file present");
 
   String payload; EpbInfo info;
@@ -456,8 +468,7 @@ static void testEpbAndStore() {
 // parsing the envelope as bare JSON, and reported the format mismatch it
 // found there. The published index was fine the whole time.
 static void testRegistryIndex() {
-  String idx = ([]{ FILE* f = fopen("registry/index.json", "rb");
-    String s; if (f) { int c; while ((c = fgetc(f)) != EOF) s += (char)c; fclose(f); } return s; })();
+  String idx = slurp("registry/index.json");
   CHECK(idx.length() > 1000, "registry index present");
 
   String payload; EpbInfo info;
@@ -484,6 +495,172 @@ static void testRegistryIndex() {
   CHECK(REGISTRY_MAX_PAYLOAD >= (REGISTRY_MAX_BYTES * 3) / 4, "payload cap covers the download cap");
 }
 
+// The seam with armeehn/epaper-blocks. testEpbAndStore() proves ONE .epb from
+// the registry installs; that is a fixture, not a contract. The store lists
+// whatever index.json says, and a user can press Install on any of it, so the
+// claim that has to hold is stronger: every block the published index offers
+// is one THIS firmware can verify, parse and install. A registry entry that
+// passes the registry's own validator and then trips idOk(), the URL-host
+// rule or the descriptor cap is invisible until a device tries it.
+static void testRegistryConformance() {
+  String idx = slurp("registry/index.json");
+  CHECK(idx.length() > 1000, "conformance: index present");
+
+  String payload;
+  EpbInfo info;
+  CHECK(epbOpen(idx.c_str(), idx.length(), payload, info, REGISTRY_MAX_PAYLOAD),
+        "conformance: index opens");
+  JsonDocument doc;
+  CHECK(!deserializeJson(doc, payload), "conformance: index payload is JSON");
+  JsonArrayConst entries = doc["blocks"].as<JsonArrayConst>();
+  int n = (int)entries.size();
+  CHECK(n > 0, "conformance: index lists blocks");
+  // A store the device cannot hold in full is a design problem, not a bug,
+  // but it should be a deliberate one.
+  CHECK(n <= BLK_MAX_INSTALLED, "conformance: registry fits BLK_MAX_INSTALLED");
+
+  LittleFS.root = "/tmp/fsroot-conformance";
+  system("rm -rf /tmp/fsroot-conformance");
+  LittleFS.begin(true);
+  // fsStoreBegin() caches its mount in a static, so a test that swaps roots
+  // after an earlier one has mounted skips the mkdir("/b") it does on first
+  // mount -- and every install then fails with "flash write failed".
+  LittleFS.mkdir("/b");
+
+  int ok = 0;
+  for (JsonObjectConst e : entries) {
+    const char* id = e["id"] | "";
+    // CONTRIBUTING.md: every entry is published as <baseurl>/<id>/<id>.epb,
+    // so the local submodule path is derivable from the id alone. If that
+    // ever stops being true the index is not describing this layout.
+    char path[128];
+    snprintf(path, sizeof(path), "registry/blocks/%s/%s.epb", id, id);
+    String epb = slurp(path);
+    if (epb.length() < 100) {
+      failed++;
+      printf("FAIL: index entry '%s' has no .epb at %s\n", id, path);
+      continue;
+    }
+    const char* url = e["epb"] | "";
+    const char* tail = strrchr(url, '/');
+    if (!tail || strncmp(tail + 1, id, strlen(id)) || strcmp(tail + 1 + strlen(id), ".epb")) {
+      failed++;
+      printf("FAIL: index entry '%s' points at '%s'\n", id, url);
+      continue;
+    }
+
+    String pl;
+    EpbInfo bi;
+    if (!epbOpen(epb.c_str(), epb.length(), pl, bi, BLK_MAX_DESC)) {
+      failed++;
+      printf("FAIL: %s.epb will not open: %s\n", id, bi.err);
+      continue;
+    }
+    if (!bi.sigOk) {
+      failed++;
+      printf("FAIL: %s.epb signature not accepted: %s\n", id, bi.err);
+      continue;
+    }
+    // Verified against the compiled-in anchor, not a literal: rotating the
+    // registry key means moving trusted_keys.h and the submodule together.
+    if (strcmp(bi.keyid, TRUSTED_KEYS[0].keyid)) {
+      failed++;
+      printf("FAIL: %s.epb keyid '%s' is not the trust anchor\n", id, bi.keyid);
+      continue;
+    }
+
+    // Install rather than parse: blockInstall() enforces rules blockParse()
+    // does not -- reserved builtin ids, no {param} in the URL host, the SSRF
+    // guard over the placeholder-substituted URL, the installed-block limit.
+    char err[96];
+    if (!blockInstall(epb.c_str(), epb.length(), false, err, sizeof(err))) {
+      failed++;
+      printf("FAIL: %s will not install: %s\n", id, err);
+      continue;
+    }
+
+    BlockDef def;
+    if (!blockLoadDef(id, def)) {
+      failed++;
+      printf("FAIL: %s installed but will not load back\n", id);
+      continue;
+    }
+    // The store draws its tile from the index and the layout editor places it
+    // from the same numbers, while the renderer uses the parsed descriptor.
+    // If those disagree the tile is a lie about the block it installs.
+    if (strcmp(def.id, id)) {
+      failed++;
+      printf("FAIL: %s parsed as id '%s'\n", id, def.id);
+      continue;
+    }
+    if (strcmp(def.name, e["name"] | "")) {
+      failed++;
+      printf("FAIL: %s index name '%s' != descriptor '%s'\n", id, e["name"] | "", def.name);
+      continue;
+    }
+    if (strcmp(def.version, e["version"] | "")) {
+      failed++;
+      printf("FAIL: %s index version differs from the descriptor\n", id);
+      continue;
+    }
+    if (e["minW"].is<int>() && def.minW != (uint8_t)(e["minW"] | 0)) {
+      failed++;
+      printf("FAIL: %s index minW %d != descriptor %d\n", id, (int)(e["minW"] | 0), def.minW);
+      continue;
+    }
+    if (e["minH"].is<int>() && def.minH != (uint8_t)(e["minH"] | 0)) {
+      failed++;
+      printf("FAIL: %s index minH %d != descriptor %d\n", id, (int)(e["minH"] | 0), def.minH);
+      continue;
+    }
+    // A block nobody can place is as broken as one that will not parse.
+    if (def.minW < 1 || def.minW > GRID_COLS || def.minH < 1 || def.minH > GRID_ROWS) {
+      failed++;
+      printf("FAIL: %s wants %dx%d, outside the %dx%d grid\n",
+             id, def.minW, def.minH, GRID_COLS, GRID_ROWS);
+      continue;
+    }
+    ok++;
+  }
+  passed++;   // the loop above counts its own failures
+  printf("   registry conformance: %d/%d published blocks install and parse\n", ok, n);
+  CHECK_EQ(ok, n, "every published block installs on this firmware");
+
+  // Everything the index offered is now installed, so the device-side view of
+  // the store must agree with the registry's own count.
+  JsonDocument installed;
+  blocksList(installed);
+  CHECK_EQ((int)installed.as<JsonArrayConst>().size(), n, "all of them are installed");
+
+  // The registry's ids must also survive a round trip through the id rules,
+  // which are stricter than the field they are stored in: char id[28] holds
+  // 27 chars but idOk() refuses anything over 26. The registry's validator
+  // capped at 27 and let a 27-char id through to fail here.
+  const char* LONG_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaa";   // 27 chars
+  char j[256], err[96];
+  snprintf(j, sizeof(j),
+           "{\"id\":\"%s\",\"source\":{\"type\":\"json\",\"url\":\"https://a.example/\"},"
+           "\"extract\":[],\"render\":{\"widget\":\"text\"}}", LONG_ID);
+  BlockDef def27;
+  CHECK_EQ((int)strlen(LONG_ID), 27, "the long id fixture is 27 chars");
+  CHECK(!blockParse(j, strlen(j), def27, err, sizeof(err)), "27-char id is refused");
+  char j26[256];
+  snprintf(j26, sizeof(j26),
+           "{\"id\":\"%.26s\",\"source\":{\"type\":\"json\",\"url\":\"https://a.example/\"},"
+           "\"extract\":[],\"render\":{\"widget\":\"text\"}}", LONG_ID);
+  CHECK(blockParse(j26, strlen(j26), def27, err, sizeof(err)), "26-char id is accepted");
+
+  // And the rule blockInstall() adds on top of blockParse(): a placeholder in
+  // the host cannot be SSRF-checked, so it is refused outright.
+  const char* HOSTPARAM =
+    "{\"id\":\"host-param\",\"source\":{\"type\":\"json\","
+    "\"url\":\"https://{h}.example.com/v1\"},"
+    "\"params\":[{\"key\":\"h\",\"label\":\"H\",\"default\":\"api\"}],"
+    "\"extract\":[],\"render\":{\"widget\":\"text\"}}";
+  CHECK(!blockInstall(HOSTPARAM, strlen(HOSTPARAM), true, err, sizeof(err)),
+        "{param} in the URL host is refused");
+}
+
 int main(int, char**) {
   setenv("TZ", "PST8PDT,M3.2.0,M11.1.0", 1);
   tzset();
@@ -495,6 +672,7 @@ int main(int, char**) {
   testBlocks();
   testEpbAndStore();
   testRegistryIndex();
+  testRegistryConformance();
   printf("\n%d passed, %d failed\n", passed, failed);
   return failed ? 1 : 0;
 }
