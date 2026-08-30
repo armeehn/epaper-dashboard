@@ -167,7 +167,15 @@ jobs:
           EOF
 
       - name: Upload firmware artifact
+        if: ${{ contains(github.server_url, 'github.com') }}
         uses: actions/upload-artifact@v5
+        with:
+          name: epaper-dashboard-${{ matrix.slug }}
+          path: dist/
+
+      - name: Upload firmware artifact (Gitea)
+        if: ${{ !contains(github.server_url, 'github.com') }}
+        uses: christopherHX/gitea-upload-artifact@v4
         with:
           name: epaper-dashboard-${{ matrix.slug }}
           path: dist/
