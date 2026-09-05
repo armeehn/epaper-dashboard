@@ -54,8 +54,28 @@ jobs:
             ~/Arduino/libraries
           key: arduino-esp32-${{ runner.os }}-v2
 
+      # Not arduino/setup-arduino-cli: that action resolves the release through
+      # api.github.com authenticated with GITHUB_TOKEN. On Gitea GITHUB_TOKEN is a
+      # *Gitea* token, so GitHub answers "Bad credentials" and every panel in the
+      # matrix dies before it compiles anything. The tarball on downloads.arduino.cc
+      # needs no API and no token, so one step now serves both hosts.
       - name: Install arduino-cli
-        uses: arduino/setup-arduino-cli@v2
+        run: |
+          VERSION=1.5.1
+          SHA256=28a8e119c498a25607821c36cb2dc49e8463941b261a0d99091baa7bc692dd2b
+          TARBALL="arduino-cli_${VERSION}_Linux_64bit.tar.gz"
+
+          curl -fsSL -O "https://downloads.arduino.cc/arduino-cli/${TARBALL}"
+          echo "${SHA256}  ${TARBALL}" | sha256sum --check --status
+
+          # ~/.local/bin, not /usr/local/bin: no sudo, so it works as either the
+          # `runner` user on GitHub or root in the act container on Gitea.
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "${TARBALL}" -C "$HOME/.local/bin" arduino-cli
+          rm -f "${TARBALL}"
+
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/arduino-cli" version
 
       - name: Install ESP32 core + libraries
         run: |
@@ -83,7 +103,10 @@ jobs:
 
       - name: Assemble flashable images
         run: |
-          pip install --quiet esptool==4.8.1
+          # --break-system-packages: PEP 668 marks the system Python externally
+          # managed on the act runner image Gitea uses. No-op on GitHub's image,
+          # which ships no EXTERNALLY-MANAGED marker.
+          pip install --quiet --break-system-packages esptool==4.8.1
           B=firmware/epaper_dashboard/build/esp32.esp32.esp32
           SLUG=${{ matrix.slug }}
           OUT=dist
@@ -144,7 +167,15 @@ jobs:
           EOF
 
       - name: Upload firmware artifact
+        if: ${{ contains(github.server_url, 'github.com') }}
         uses: actions/upload-artifact@v5
+        with:
+          name: epaper-dashboard-${{ matrix.slug }}
+          path: dist/
+
+      - name: Upload firmware artifact (Gitea)
+        if: ${{ !contains(github.server_url, 'github.com') }}
+        uses: christopherHX/gitea-upload-artifact@v4
         with:
           name: epaper-dashboard-${{ matrix.slug }}
           path: dist/

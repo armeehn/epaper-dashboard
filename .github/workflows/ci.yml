@@ -27,10 +27,15 @@ jobs:
         with:
           path: tests/host/.deps
           key: hostdeps-${{ runner.os }}-v1
-      # mbedTLS generates its PSA driver wrappers at build time and imports
-      # jsonschema to do it; without this the first (cold-cache) run fails.
+      # mbedTLS generates its PSA driver wrappers at build time; the generator
+      # imports jinja2 and jsonschema. Both are named here rather than relying
+      # on GitHub's runner image happening to preinstall jinja2, which the act
+      # image Gitea uses does not.
       - name: Install mbedTLS build prerequisites
-        run: pip install --quiet jsonschema
+        # --break-system-packages: PEP 668 marks the system Python externally
+        # managed on the act runner image. No-op on GitHub's image, which ships
+        # no EXTERNALLY-MANAGED marker.
+        run: pip install --quiet --break-system-packages jinja2 jsonschema
       - name: Run full host verification
         run: bash tests/host/run_tests.sh
 

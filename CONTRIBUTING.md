@@ -14,7 +14,7 @@ This strict-compiles every translation unit against the *real* libraries
 (GxEPD2, ArduinoJson, mbedTLS — auto-cloned into `tests/host/.deps`), compiles
 the sketch for b/w and alternate-size panel variants, emulates the Arduino IDE's
 prototype-hoisting quirk (catches "does not name a type" ordering bugs before
-they reach a flasher), and runs the 126-check unit suite including a real ECDSA
+they reach a flasher), and runs the 148-check unit suite including a real ECDSA
 P-256 signature round-trip against a real `.epb` from `registry/`.
 `tests/host/build_preview.sh` renders the README screenshots with the actual
 firmware drawing code.
