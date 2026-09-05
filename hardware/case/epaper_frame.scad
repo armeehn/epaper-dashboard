@@ -3,6 +3,12 @@
 //  Desk + wall case for a custom ESP32 carrier board, TP4056-style
 //  USB-C charger module, and LiPo pouch cell.
 //  Units: mm  |  OpenSCAD 2021.01
+// ---------------------------------------------------------------------
+//  THE PANEL IS REAR-LOADED AND THE POCKET IS THE ONLY THING IN ITS WAY.
+//  Nothing may be added inside the pocket footprint: the glass drops in
+//  along -z from the open back and has to reach its seat unobstructed.
+//  `part="obstruction"` renders whatever violates that; it must be empty,
+//  and fit_check.sh fails the build if it is not.
 // =====================================================================
 //  PARTS - set `part` (or CLI: -D 'part="body"'):
 //    "body"     front frame            (print face down, no supports)
@@ -27,18 +33,29 @@ aa_top    = 3.4;    // TOP border: glass edge -> active area  ** MEASURE & TWEAK
 fpc_w     = 34;     // relief slot width for the ribbon (ribbon itself ~14)
 
 // ------------------ CASE SHELL ---------------------------------------
-clr       = 0.3;    // panel-to-pocket clearance per side
+// clr is a GLASS clearance, not a plastic one. A 170 mm pocket printed in
+// PETG lands within about +/-0.4 mm of nominal, so anything under ~0.5 can
+// come out of the printer as an interference fit on a part that cannot be
+// filed, tapped or bent. 0.6 per side costs nothing: the panel is hidden
+// behind an 11.5 mm border and clamped by foam, so it cannot rattle.
+clr       = 0.6;    // panel-to-pocket clearance per side
 wall      = 2.6;    // outer wall thickness
 bezel_t   = 2.0;    // front face thickness in front of the glass
-reveal    = 1.0;    // window opening beyond active area, per side
+reveal    = 1.6;    // window opening beyond active area, per side
 win_ch    = 2.0;    // 45-deg outward chamfer around the window
+foam_fr   = 1.0;    // foam tape on the front ledge, under the glass
 foam_t    = 1.0;    // foam tape on panel rear border, compressed by lid rim
 rim_len   = 17.0;   // interior depth for electronics
 rim_t     = 2.0;    // lid rim wall thickness
 lid_floor = 2.4;    // lid back plate thickness
 corner_r  = 5.0;    // outer corner radius
 pocket_r  = 1.2;    // pocket corner radius (small - panel corners are square)
-lid_clr   = 0.25;   // lid-to-body sliding clearance per side
+relief_r  = 3.0;    // corner relief radius (square glass corners need room)
+relief_ov = 0.8;    // how far the relief bulges past the pocket wall
+lead_in   = 1.0;    // 45-deg flare at the rear mouth, guides panel and rim
+scallop_w = 18;     // finger scallop in the pocket side walls (panel lift-out)
+scallop_d = 3;      // ...and how deep it cuts into the wall
+lid_clr   = 0.4;    // lid-to-body sliding clearance per side
 
 // ------------------ CUSTOM ESP32 CARRIER BOARD -----------------------
 board_l        = 60;    // size along X (USB-C edge faces the right wall)
@@ -79,18 +96,22 @@ batt_fence_t  = 1.6;
 keyhole_pitch = 80;     // horizontal spacing of the two wall keyholes
 stand_len     = 150;
 stand_tilt    = 12;     // backward lean
-pillar        = 8.5;    // corner screw pillar size
-lid_pilot     = 2.5;    // M3 self-tap pilot in the pillars
+boss_edge     = 5.0;    // screw boss center -> nearest outer face
+boss_gap      = 4.4;    // screw boss center -> pocket wall (must clear it)
+lid_pilot     = 2.5;    // M3 self-tap pilot in the side walls
+lid_tap_deep  = 10.5;   // pilot depth (M3 x 12 minus the lid floor)
 
 // =====================================================================
 // DERIVED
 // =====================================================================
-pocket_w  = panel_w + 2*clr;                  // 170.8
-pocket_h  = panel_h + 2*clr;                  // 111.8
-panel_back= bezel_t + panel_t;
+pocket_w  = panel_w + 2*clr;                  // 171.4
+pocket_h  = panel_h + 2*clr;                  // 112.4
+panel_seat= bezel_t + foam_fr;                // glass front face
+panel_back= panel_seat + panel_t;
 rim_front = panel_back + foam_t;              // lid rim presses foam here
 depth     = rim_front + rim_len + lid_floor;  // total case depth
 lid_iz    = depth - lid_floor;                // z of lid inner floor
+body_d    = lid_iz;                           // the lid caps the body flush
 
 aa_bottom = panel_h - aa_h - aa_top;          // FPC-side border (~9.9)
 win_w     = aa_w + 2*reveal;
@@ -99,10 +120,12 @@ win_dy    = (aa_bottom - aa_top)/2;           // window sits this far above pock
 
 // uniform picture-frame border all around the window.
 // minimum is set by the wide FPC-side border of the glass.
-band      = aa_bottom - reveal + clr + wall;  // ~11.8
+band      = aa_bottom - reveal + clr + wall;  // ~11.5
 outer_w   = max(win_w + 2*band, pocket_w + 2*wall);
 outer_h   = win_h + 2*band;                   // shell is centered on the WINDOW
 shell_dy  = win_dy;                           // shell center offset (pocket stays at y=0)
+
+relief_c  = relief_r - relief_ov;             // relief center inset from the pocket corner
 
 rim_ow = pocket_w - 2*lid_clr;
 rim_oh = pocket_h - 2*lid_clr;
@@ -116,8 +139,11 @@ board_cy = cav_y0 + board_from_bot + board_w/2;
 chg_cy   = cav_y0 + chg_from_bot + chg_w/2;
 chg_usb_ctr = chg_rail_h - 1.6;               // charger USB center above inner floor (USB faces the floor)
 
-px = pocket_w/2 - pillar/2 + 0.2;             // pillar centers
-py = pocket_h/2 - pillar/2 + 0.2;
+// Lid screws live in the LEFT and RIGHT walls, never at the pocket corners:
+// the side walls are ~9 mm of solid plastic, the pocket stays empty.
+boss_x = pocket_w/2 + boss_gap;
+boss_yt = shell_dy + outer_h/2 - boss_edge;
+boss_yb = shell_dy - outer_h/2 + boss_edge;
 
 stack = plate_boss_h + plate_t + board_soff_h + 1.6 + 2 + 1.6 + 3.2;
 
@@ -127,6 +153,15 @@ assert(usb_h + usb_slot_h/2 < rim_len + 2.6, "usb slot pokes past cavity depth")
 assert(board_cx - board_l/2 > cav_x0 + 2, "board hits the left rim");
 assert(board_cy - board_w/2 > cav_y0 + 1, "board hangs below cavity");
 assert(board_cx - 1.75 + (board_l+4.5)/2 < rim_iw/2 - 0.4, "plate hits the lid rim");
+// --- panel insertion invariants (this is what cracked the first build) ---
+assert(boss_x - lid_pilot/2 - 1.6 >= pocket_w/2,
+       "lid screw boss eats into the panel pocket: the glass cannot be fitted");
+assert(boss_x + lid_pilot/2 + 1.6 <= outer_w/2,
+       "lid screw boss breaks out through the outer wall");
+assert(norm([pocket_w/2 - relief_c, pocket_h/2 - relief_c] - [panel_w/2, panel_h/2])
+       < relief_r - 0.5,
+       "corner relief too small: the square glass corners will bind on the fillets");
+assert(clr >= 0.5, "panel clearance below print tolerance on a 170 mm span");
 echo(str(">> outer: ", outer_w, " x ", outer_h, " x ", depth, " mm, window ", win_w, " x ", win_h));
 echo(str(">> component stack ", stack, " / ", rim_len, " mm; usb_h=", usb_h));
 
@@ -150,15 +185,48 @@ module rim_slot(y, z, sw, sh) {
     translate([rim_iw/2 - 1, y, z]) rotate([0,90,0])
         linear_extrude(rim_t + 2) rrect(sh, sw, 1.5);
 }
+// the four lid screw positions, in body coordinates
+module at_bosses() {
+    for (sx=[-1,1], y=[boss_yb, boss_yt]) translate([sx*boss_x, y, 0]) children();
+}
 
 // =====================================================================
-// FRONT BODY  (z=0 front face, +z rearward)
+// PANEL POCKET  (a single negative: everything the glass needs, and
+// nothing may be unioned back into it afterwards)
+// =====================================================================
+module panel_pocket() {
+    translate([0,0,bezel_t]) rbox(pocket_w, pocket_h, body_d, pocket_r);
+    // square glass corners cannot seat in a filleted corner: relieve all four
+    for (sx=[-1,1], sy=[-1,1])
+        translate([sx*(pocket_w/2 - relief_c), sy*(pocket_h/2 - relief_c), bezel_t])
+            cylinder(r=relief_r, h=body_d);
+    // 45-deg flare at the open back so the glass and the lid rim self-centre
+    translate([0,0,body_d-lead_in]) hull() {
+        rbox(pocket_w, pocket_h, EPS, pocket_r);
+        translate([0,0,lead_in])
+            rbox(pocket_w+2*lead_in, pocket_h+2*lead_in, EPS, pocket_r+lead_in);
+    }
+    // finger scallops: reach the glass edge to break the foam bond and lift
+    // the panel straight out. Stops at rim_front so the lid rim still seals.
+    for (sx=[-1,1]) translate([sx*pocket_w/2, 0, bezel_t]) hull()
+        for (sy=[-1,1]) translate([0, sy*(scallop_w/2 - scallop_d), 0])
+            cylinder(r=scallop_d, h=rim_front-bezel_t);
+}
+
+// the volume the rear-loaded glass sweeps on its way to the seat
+module panel_sweep() {
+    translate([0,0,panel_seat]) linear_extrude(depth+40)
+        square([panel_w, panel_h], center=true);
+}
+
+// =====================================================================
+// FRONT BODY  (z=0 front face, +z rearward; the lid caps it at body_d)
 // =====================================================================
 module body() {
     difference() {
         hull() {   // shell with a small front-edge chamfer, centered on the window
-            translate([0,shell_dy,0.8]) rbox(outer_w, outer_h, depth-0.8, corner_r);
-            translate([0,shell_dy,0])   rbox(outer_w-1.6, outer_h-1.6, depth, corner_r-0.8);
+            translate([0,shell_dy,0.8]) rbox(outer_w, outer_h, body_d-0.8, corner_r);
+            translate([0,shell_dy,0])   rbox(outer_w-1.6, outer_h-1.6, body_d, corner_r-0.8);
         }
         // window with 45-deg outward chamfer
         translate([0, win_dy, 0]) {
@@ -168,22 +236,20 @@ module body() {
             }
             translate([0,0,bezel_t-EPS]) rbox(win_w, win_h, 1, 2);
         }
-        // panel pocket + electronics cavity (straight walls to the back)
-        translate([0,0,bezel_t]) rbox(pocket_w, pocket_h, depth, pocket_r);
+        panel_pocket();
         // port openings
         wall_slot(board_cy, lid_iz - usb_h, usb_slot_w, usb_slot_h);
         wall_slot(chg_cy, lid_iz - chg_usb_ctr, chg_usb_w, chg_usb_h, 1.2);
+        // lid screws tap blind into the solid side walls
+        at_bosses() translate([0,0,body_d-lid_tap_deep])
+            cylinder(d=lid_pilot, h=lid_tap_deep+EPS);
     }
-    // corner screw pillars (fused to the walls; stop above the glass)
-    for (sx=[-1,1], sy=[-1,1]) translate([sx*px, sy*py, 0])
-        difference() {
-            translate([0,0,panel_back+0.7]) rbox(pillar, pillar, lid_iz-panel_back-0.7, 2);
-            translate([0,0,lid_iz-10.5]) cylinder(d=lid_pilot, h=11);
-        }
 }
 
 // =====================================================================
 // LID  (modeled in assembly coords: back face at z=depth)
+//  The lid is a full-footprint cap, not a plug: it lands on the body's
+//  rear shoulder and reaches out to the side-wall screws.
 // =====================================================================
 module keyhole_neg() {   // local: z=0 outer face, +z inward, slot runs +y
     web = 2.2; d = 5.4;
@@ -221,7 +287,10 @@ module charger_mount() {   // at right rim, module slides in USB-first
 module lid_asm() {
     difference() {
         union() {
-            translate([0,0,lid_iz]) rbox(rim_ow, rim_oh, lid_floor, 1.5);      // back plate
+            translate([0,shell_dy,0]) hull() {                                 // back plate
+                translate([0,0,lid_iz])     rbox(outer_w, outer_h, lid_floor-0.8, corner_r);
+                translate([0,0,lid_iz+0.8]) rbox(outer_w-1.6, outer_h-1.6, lid_floor-0.8, corner_r-0.8);
+            }
             difference() {                                                     // rim tube
                 translate([0,0,rim_front]) rbox(rim_ow, rim_oh, rim_len, 1.5);
                 translate([0,0,rim_front-EPS]) rbox(rim_iw, rim_ih, rim_len+1, 1.2);
@@ -243,11 +312,8 @@ module lid_asm() {
             translate([cav_x0+34, cav_y0+78, 0]) ziptie_bridge();              // spare module
             translate([cav_x0+34, cav_y0+94, 0]) ziptie_bridge();              // tie-downs
         }
-        // corner notches so the rim clears the pillars (floor stays intact)
-        for (sx=[-1,1], sy=[-1,1])
-            translate([sx*px, sy*py, rim_front-1]) rbox(pillar+1.6, pillar+1.6, rim_len-0+1, 1.5);
-        // lid screws into pillars: through-hole + head counterbore (from back)
-        for (sx=[-1,1], sy=[-1,1]) translate([sx*px, sy*py, 0]) {
+        // lid screws into the body side walls: through-hole + head counterbore
+        at_bosses() {
             translate([0,0,lid_iz-1]) cylinder(d=3.5, h=lid_floor+2);
             translate([0,0,depth-1.3]) cylinder(d=6.6, h=1.4);
         }
@@ -318,13 +384,16 @@ module stand() {
 // =====================================================================
 // OUTPUT
 // =====================================================================
+if (part == "obstruction") {   // MUST render empty - see fit_check.sh
+    intersection() { body(); panel_sweep(); }
+}
 if (part == "section") {   // vertical slice through the DevKitC USB axis
     intersection() {
         union() {
             body();
             lid_asm();
             translate([board_cx, board_cy, lid_iz-plate_boss_h]) rotate([180,0,0]) plate();
-            translate([0,0,bezel_t+0.01]) rbox(panel_w, panel_h, panel_t, 0.6);
+            translate([0,0,panel_seat]) rbox(panel_w, panel_h, panel_t, 0.6);
         }
         translate([0, board_cy, 0]) cube([500, 1.6, 200], center=true);
     }
@@ -341,15 +410,18 @@ if (part == "plate") plate();
 if (part == "stand") stand();
 if (part == "exploded") {   // front (body) to back (lid), pulled apart along +z
     color("DimGray")    body();
-    color("WhiteSmoke") translate([0,0,bezel_t+30]) rbox(panel_w, panel_h, panel_t, 0.6);
+    color("WhiteSmoke") translate([0,0,panel_seat+30]) rbox(panel_w, panel_h, panel_t, 0.6);
     color("Green")      translate([board_cx, board_cy, 12.2+42]) rbox(board_l, board_w, 1.6, 1);
     color("Orange")     translate([board_cx, board_cy, lid_iz-plate_boss_h+31]) rotate([180,0,0]) plate();
     color("SteelBlue")  translate([0,0,72]) lid_asm();
 }
 if (part == "assembly") {
     color("DimGray")    body();
-    color("WhiteSmoke") translate([0,0,bezel_t+0.01]) rbox(panel_w, panel_h, panel_t, 0.6);
+    color("WhiteSmoke") translate([0,0,panel_seat]) rbox(panel_w, panel_h, panel_t, 0.6);
     color("SteelBlue")  lid_asm();
     color("Orange")     translate([board_cx, board_cy, lid_iz-plate_boss_h]) rotate([180,0,0]) plate();
     color("Green")      translate([board_cx, board_cy, lid_iz-plate_boss_h-plate_t-board_soff_h-1.6]) rbox(board_l, board_w, 1.6, 1); // board mock
+}
+if (part == "clash") {   // body and lid must never want the same space
+    intersection() { body(); lid_asm(); }
 }

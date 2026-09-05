@@ -33,3 +33,15 @@ jobs:
         run: pip install --quiet jsonschema
       - name: Run full host verification
         run: bash tests/host/run_tests.sh
+
+  case-fit:
+    # The enclosure's two invariants: nothing may sit in the panel's insertion
+    # path, and the body and lid may not overlap. Both are cheap to check and
+    # both were violated by a model that rendered and printed perfectly well.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install OpenSCAD
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends openscad
+      - name: Check the case fits together
+        run: hardware/case/fit_check.sh
