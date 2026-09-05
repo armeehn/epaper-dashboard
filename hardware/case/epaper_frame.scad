@@ -64,8 +64,11 @@ lid_clr   = 0.4;    // lid-to-body sliding clearance per side
 //            past the snap hook. Nothing is drilled, nothing is glued.
 //   "screws" the old standoff-and-M2.5 pattern, for boards that do have holes.
 board_mount    = "rails"; // ["rails","screws"]
-board_l        = 60;    // size along X (USB-C edge faces the right wall) ** MEASURE **
-board_w        = 40;    // size along Y                                   ** MEASURE **
+// Waveshare e-Paper ESP32 Driver Board: "Outline dimension: 29.46mm x 48.25mm"
+// (e-Paper_ESP32_Driver_Board_user_manual_en.pdf, Specifications). The long
+// axis runs toward the right wall, so the USB edge is the 29.46 mm one.
+board_l        = 48.25; // size along X (USB edge faces the right wall)
+board_w        = 29.46; // size along Y
 board_pcb_t    = 1.6;   // PCB thickness                                  ** MEASURE **
 board_hole_dx  = 53;    // "screws" only: mounting-hole spacing X  ** MEASURE YOUR BOARD **
 board_hole_dy  = 33;    // "screws" only: mounting-hole spacing Y  ** MEASURE YOUR BOARD **
@@ -198,6 +201,14 @@ assert(board_clamp_x - board_clamp_pl/2 > 0.2,
        "the clamp screw shank fouls the board's trailing edge");
 assert(board_slot_z >= 0.15, "no vertical slack under the lips: the board will bind");
 assert(board_lip + board_rail_clr < board_w/4, "the lips reach too far over the board");
+// the plate-to-lid screws are on a fixed pattern; a small board shrinks the
+// plate around them, so check they still land on plate and not on the rails
+assert(plate_hole_dy/2 + 1.75 < board_w/2 + board_rail_clr,
+       "the plate's lid screws break into the rail walls");
+assert(plate_hole_dy/2 + 3.3 < plate_y,
+       "the plate is too narrow for its own lid-screw counterbores");
+assert(plate_hole_dx/2 + 3.3 < plate_x1 && -plate_hole_dx/2 - 3.3 > plate_x0,
+       "the plate is too short for its own lid-screw counterbores");
 // --- panel insertion invariants (this is what cracked the first build) ---
 assert(boss_x - lid_pilot/2 - 1.6 >= pocket_w/2,
        "lid screw boss eats into the panel pocket: the glass cannot be fitted");
