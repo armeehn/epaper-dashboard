@@ -38,3 +38,20 @@ jobs:
         run: pip install --quiet --break-system-packages jinja2 jsonschema
       - name: Run full host verification
         run: bash tests/host/run_tests.sh
+
+  case-fit:
+    # The enclosure's four invariants: nothing in the panel's insertion path,
+    # no overlap between body and lid, and a board carrier that clears both
+    # the board and the board's way in. All cheap to check, and all of them
+    # were violated by a model that rendered and printed perfectly well.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # sudo is absent from the act runner image Gitea uses, which runs as root.
+      - name: Install OpenSCAD
+        run: |
+          SUDO=$(command -v sudo || true)
+          $SUDO apt-get update -qq
+          $SUDO apt-get install -y --no-install-recommends openscad
+      - name: Check the case fits together
+        run: hardware/case/fit_check.sh
