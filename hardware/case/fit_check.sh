@@ -8,6 +8,10 @@
 #      Anything left in its path is a case that gets cut open with a saw.
 #   2. part="clash" - body() AND lid_asm(). Shared solid is a lid that will
 #      not close, or that closes by cracking whatever is under it.
+#   3. part="board_clash" - plate() AND the seated PCB, and part="board_sweep"
+#      - plate() AND the path the board slides along to get there. The board
+#      is held by its outline, having no mounting holes, so every rail, lip,
+#      stop and boss has to clear both the board and its way in.
 #
 # Judged by VOLUME, not by facet count: parts that merely touch (the lid
 # landing on the body's rear shoulder) intersect in a zero-thickness sheet
@@ -46,6 +50,10 @@ check() {   # $1 = part name, $2 = what a hit means
         echo "FAIL: $scad did not render part=\"$part\"" >&2
         return 1
     fi
+    if grep -q "Assertion" "$out/$part.log"; then
+        grep "Assertion" "$out/$part.log" >&2
+        return 1                      # a failed assert renders nothing: not a pass
+    fi
     vol=$(volume "$out/$part.stl")
     if [ "$(python3 -c "print(1 if $vol > $tol else 0)")" = 1 ]; then
         echo "FAIL: ${vol} mm3 - $meaning" >&2
@@ -57,6 +65,8 @@ check() {   # $1 = part name, $2 = what a hit means
 
 check obstruction "case material sits in the panel insertion path"
 check clash       "the body and the lid overlap"
+check board_clash "the board carrier occupies the board's own space"
+check board_sweep "the carrier blocks the board sliding in"
 
 # the asserts inside the model: clearances, boss placement, corner relief
 openscad -o "$out/body.stl" -D 'part="body"' "$scad" 2>"$out/body.log"

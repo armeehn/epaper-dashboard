@@ -28,6 +28,22 @@ Three details exist only to make the glass go in and come out again:
 puts anything back into the pocket or makes the lid and body overlap. Run it after any
 parameter change.
 
+## The board carrier needs no mounting holes
+
+Most ESP32 dev boards, the 38-pin DevKitC included, have none. So the carrier holds the
+board by its outline: two rails give it a seat and capture it sideways, lips along the
+rails hold it down, two stops at the USB end set how far it goes, and one M2.5 screw at
+the trailing edge stops it coming back out.
+
+The board goes in **flat**, sliding from the trailing end, so nothing may stand in that
+path until it is home. That is why the retainer is a screw driven last rather than a
+snap hook: a hook tall enough to hold the board would also be tall enough to block it
+going in. `fit_check.sh` intersects the carrier with the board *and with the path the
+board slides along*, so a future edit cannot reintroduce that.
+
+Set `board_mount = "screws"` if your board does have a hole pattern; the old standoff
+and M2.5 arrangement is still there.
+
 ## Printed parts
 
 | File        | Part                            | Print orientation        | Supports |
@@ -44,7 +60,7 @@ The body needs a 200 x 130 mm bed minimum (fits any 220x220 printer).
 
 - 4x M3 x 12 self-tapping screws (through the lid, into the body's side walls)
 - 4x M3 x 6 self-tapping screws (plate onto the lid bosses)
-- 4x M2.5 x 6 self-tapping screws (your board onto the plate standoffs)
+- 1x M2.5 x 6 self-tapping screw (the board clamp; 4x if `board_mount = "screws"`)
 - 1x TP4056-style USB-C charger module (~28 x 17.5 mm), slides into the printed rails
 - 1x LiPo pouch cell up to 50 x 34 x 11 mm (103450 or smaller)
 - 1 mm foam tape strips, two runs: one on the front ledge under the glass, one on the
@@ -61,9 +77,11 @@ datasheet:
    the active (image) area, in mm. The panel's borders are asymmetric: about 3.5 on the
    sides and top, about 9.9 on the ribbon side. If your measurement differs, edit it,
    otherwise the window may show a sliver of white border.
-2. **`board_hole_dx` / `board_hole_dy` (53 x 33)**: mounting hole spacing of your custom
-   board, plus `board_l` / `board_w` (60 x 40) for its outline. Only the small plate
-   needs reprinting if you got these wrong after printing.
+2. **`board_l` / `board_w` / `board_pcb_t` (60 x 40 x 1.6)**: your board's outline and
+   thickness. These are the only board numbers the default carrier uses, because it
+   grips the outline rather than a hole pattern. Only the small plate needs reprinting
+   if you got them wrong. (With `board_mount = "screws"`, `board_hole_dx` /
+   `board_hole_dy` matter instead.)
 3. **`usb_h` (default 14.8)**: height of the DevKitC USB-C connector center above the
    lid's inner floor once the board is screwed to the plate. Stack it up: boss 3.5 +
    plate 2 + standoff 2.5 + carrier PCB + gap + DevKitC PCB + half the connector.
@@ -98,8 +116,10 @@ in your slicer (and `plate.stl` if your hole pattern is asymmetric).
 2. Fold the ribbon gently around the panel's bottom edge toward the back. Never crease
    it toward the front of the screen, and fold it only once. It passes through the
    34 mm relief notch in the lid rim's bottom edge.
-3. Screw your custom board to the plate standoffs (M2.5). Screw the plate to the two
-   lid bosses (M3 x 6) with the DevKitC USB-C facing the right rim wall.
+3. Slide your board into the plate, flat, from the trailing end: under the rail lips
+   until its USB edge meets the two stops. Drive one M2.5 x 6 screw into the boss
+   behind the trailing edge; its head laps over the board and holds it there. Screw
+   the plate to the lid bosses (M3 x 6) with the USB-C facing the right rim wall.
 4. Slide the charger module into its rails near the top-right, USB-C outward,
    components facing the lid floor so the charge LEDs show through the peek slot.
    The small nubs snap over the PCB.

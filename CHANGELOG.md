@@ -6,9 +6,10 @@ on `main`.
 ## Unreleased
 
 ### Added
-- `hardware/case/fit_check.sh` and `hardware/case/render.sh`: the case's fit
-  invariants as a runnable check, and one command to regenerate all four STLs
-  and all six previews from the model.
+- `hardware/case/fit_check.sh` and `hardware/case/render.sh`: the case's four
+  fit invariants as a runnable check (the panel's insertion path, body against
+  lid, the board carrier against the board and against the board's slide-in
+  path), and one command to regenerate all four STLs and all six previews.
 - Optional **store** step in the setup wizard: browse the signed block registry
   by category and install during first-run setup, instead of only afterwards.
 - `GET /api/imap/detect` — credential-free IMAP host detection for any mail
@@ -36,6 +37,16 @@ on `main`.
 - README trimmed by ~40%; detail lives in `docs/`.
 
 ### Fixed
+- **The board carrier assumed mounting holes the board does not have.** The
+  plate held the board on four standoffs with M2.5 screws, and the 38-pin
+  DevKitC, like most ESP32 dev boards, has no mounting holes at all. The
+  default `board_mount = "rails"` now grips the board by its outline: rails
+  for the seat and sideways capture, lips to hold it down, two stops at the
+  USB end, and one M2.5 screw behind the trailing edge. It is a screw rather
+  than a snap hook because the board goes in flat: a hook tall enough to hold
+  it would be tall enough to block it. `board_mount = "screws"` keeps the old
+  arrangement for boards that do have holes. `fit_check.sh` intersects the
+  carrier with the board and with the path the board slides along.
 - **The case could not be assembled: the panel had no way in.** The four lid
   screw pillars stood inside the panel pocket, 8.3 mm into it at each corner,
   narrowing the 170.2 mm opening to 154.2 mm of clear span. 4.1 cm3 of plastic

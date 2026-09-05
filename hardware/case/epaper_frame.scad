@@ -58,13 +58,40 @@ scallop_d = 3;      // ...and how deep it cuts into the wall
 lid_clr   = 0.4;    // lid-to-body sliding clearance per side
 
 // ------------------ CUSTOM ESP32 CARRIER BOARD -----------------------
-board_l        = 60;    // size along X (USB-C edge faces the right wall)
-board_w        = 40;    // size along Y
-board_hole_dx  = 53;    // mounting-hole spacing X  ** MEASURE YOUR BOARD **
-board_hole_dy  = 33;    // mounting-hole spacing Y  ** MEASURE YOUR BOARD **
+// Most ESP32 dev boards, the 38-pin DevKitC included, ship with NO mounting
+// holes. So the carrier holds the board by its edges and needs none:
+//   "rails"  slide the USB end under the lips, press the trailing end down
+//            past the snap hook. Nothing is drilled, nothing is glued.
+//   "screws" the old standoff-and-M2.5 pattern, for boards that do have holes.
+board_mount    = "rails"; // ["rails","screws"]
+board_l        = 60;    // size along X (USB-C edge faces the right wall) ** MEASURE **
+board_w        = 40;    // size along Y                                   ** MEASURE **
+board_pcb_t    = 1.6;   // PCB thickness                                  ** MEASURE **
+board_hole_dx  = 53;    // "screws" only: mounting-hole spacing X  ** MEASURE YOUR BOARD **
+board_hole_dy  = 33;    // "screws" only: mounting-hole spacing Y  ** MEASURE YOUR BOARD **
 board_pilot    = 2.05;  // standoff pilot: 2.05 for M2.5 self-tap, 2.5 for M3
-board_soff_h   = 2.5;   // board standoff height above the plate
-board_gap_right= 1.0;   // board USB edge -> lid rim inner face
+board_soff_h   = 2.5;   // board underside above the plate (room for solder tails)
+board_gap_right= 2.0;   // board USB edge -> lid rim inner face (the stop lives here)
+
+// "rails" carrier. Everything here is printed against the board's OUTLINE,
+// so board_l / board_w / board_pcb_t are the only numbers you have to get
+// right; there is no hole pattern to match.
+board_rail_t   = 1.8;   // rail wall thickness
+board_rail_clr = 0.3;   // per-side slide clearance on the board width
+board_shelf    = 1.5;   // how far the rail shelf reaches under the board
+board_slot_z   = 0.25;  // vertical slack between board and lip
+board_lip      = 1.2;   // how far the lips reach over the board
+board_lip_t    = 1.2;   // lip thickness
+board_lip_back = 8;     // trailing length left un-lipped, for the clamp screw
+board_stop_t   = 1.0;   // USB-end stop thickness (sits inside board_gap_right)
+board_stop_w   = 6;     // ...and how far each stop reaches inward
+// The board goes in flat, so nothing may stand behind its trailing edge until
+// it is home. One screw, driven last, does that job: its shank passes beside
+// the edge and its head laps over the top. No flexures to tune, no extra part.
+board_clamp_x  = 1.5;   // clamp screw axis, past the board's trailing edge
+board_clamp_d  = 6;     // clamp boss diameter
+board_clamp_pl = 2.05;  // clamp pilot: M2.5 self-tap
+board_clamp_hd = 4.7;   // M2.5 pan head diameter
 board_from_bot = 18;    // board lower edge above cavity inner bottom
 usb_h          = 14.8;  // CENTER of the DevKitC USB-C above lid inner floor ** TWEAK **
 usb_slot_w     = 14;    // wall slot width (Y) - sized to pass the plug overmold
@@ -139,20 +166,38 @@ board_cy = cav_y0 + board_from_bot + board_w/2;
 chg_cy   = cav_y0 + chg_from_bot + chg_w/2;
 chg_usb_ctr = chg_rail_h - 1.6;               // charger USB center above inner floor (USB faces the floor)
 
+// board carrier, in plate-local coordinates (origin = board centre, z=0 = plate bottom)
+board_rail_h = board_soff_h + board_pcb_t + board_slot_z + board_lip_t;
+board_zr     = board_soff_h + board_pcb_t + board_slot_z;   // underside of lips and hook
+plate_x1 = board_l/2 + board_stop_t;                        // USB end
+board_lip_x0   = -board_l/2 + board_lip_back;
+board_clamp_cx = -(board_l/2 + board_clamp_x);
+plate_x0 = board_clamp_cx - board_clamp_d/2 - 1.0;
+plate_y  = board_w/2 + board_rail_clr + board_rail_t;
+
 // Lid screws live in the LEFT and RIGHT walls, never at the pocket corners:
 // the side walls are ~9 mm of solid plastic, the pocket stays empty.
 boss_x = pocket_w/2 + boss_gap;
 boss_yt = shell_dy + outer_h/2 - boss_edge;
 boss_yb = shell_dy - outer_h/2 + boss_edge;
 
-stack = plate_boss_h + plate_t + board_soff_h + 1.6 + 2 + 1.6 + 3.2;
+stack = plate_boss_h + plate_t + board_soff_h + board_pcb_t + 2 + 1.6 + 3.2;
 
 assert(aa_bottom > 7, "aa_top looks wrong: bottom (FPC) border should be ~9.9");
 assert(stack < rim_len - 0.5, str("component stack ", stack, " too tall for rim_len ", rim_len));
 assert(usb_h + usb_slot_h/2 < rim_len + 2.6, "usb slot pokes past cavity depth");
 assert(board_cx - board_l/2 > cav_x0 + 2, "board hits the left rim");
 assert(board_cy - board_w/2 > cav_y0 + 1, "board hangs below cavity");
-assert(board_cx - 1.75 + (board_l+4.5)/2 < rim_iw/2 - 0.4, "plate hits the lid rim");
+assert(board_cx + plate_x1 < rim_iw/2 - 0.4, "plate hits the lid rim");
+// --- board retention invariants (your board has no mounting holes) ---
+assert(board_gap_right >= board_stop_t + 0.6,
+       "the USB-end stop does not fit between the board and the lid rim");
+assert(board_clamp_hd/2 - board_clamp_x > 0.5,
+       "the clamp screw head does not reach over the board's trailing edge");
+assert(board_clamp_x - board_clamp_pl/2 > 0.2,
+       "the clamp screw shank fouls the board's trailing edge");
+assert(board_slot_z >= 0.15, "no vertical slack under the lips: the board will bind");
+assert(board_lip + board_rail_clr < board_w/4, "the lips reach too far over the board");
 // --- panel insertion invariants (this is what cracked the first build) ---
 assert(boss_x - lid_pilot/2 - 1.6 >= pocket_w/2,
        "lid screw boss eats into the panel pocket: the glass cannot be fitted");
@@ -337,20 +382,67 @@ module lid_asm() {
 }
 
 // =====================================================================
-// BOARD PLATE  (local: z=0 bottom, standoffs +z)
+// BOARD PLATE  (local: z=0 bottom, board features +z)
+//  The board has no mounting holes, so it is held by its outline. It slides
+//  in FLAT from the trailing end, which is why nothing may stand in that
+//  path until the board is home:
+//
+//   clamp screw, driven last          lips (hold the board down)      stop
+//            v                              v            v             v
+//           (O)  +----------------------------+----------+           +--+
+//        #########|##############################|##########|###########|##|
+//        #        |         PCB  ---- slides ---------->    |           |  |
+//        #########|##############################|##########|###########|##|
+//         ^                                                              ^
+//        rail wall + shelf (seat and Y capture)                    lid rim beyond
 // =====================================================================
+module rail_one() {   // one long-edge rail; mirrored for the other side
+    yi = board_w/2 + board_rail_clr;               // rail inner face
+    translate([plate_x0, yi, plate_t-EPS])         // wall
+        cube([plate_x1-plate_x0, board_rail_t, board_rail_h]);
+    translate([plate_x0, yi-board_shelf, plate_t-EPS])   // shelf the board rests on
+        cube([plate_x1-plate_x0, board_shelf, board_soff_h]);
+    translate([board_lip_x0, yi-board_lip, plate_t+board_zr])   // lip
+        cube([board_l/2-board_lip_x0, board_lip, board_lip_t]);
+    translate([board_l/2, yi-board_stop_w, plate_t-EPS])        // USB-end stop
+        cube([board_stop_t, board_stop_w, board_soff_h+board_pcb_t+0.8]);
+}
+module board_clamp() {   // boss stops level with the board, so it never blocks
+    translate([board_clamp_cx, 0, plate_t-EPS])   // the slide-in; the screw does
+        cylinder(d=board_clamp_d, h=board_soff_h+EPS);
+}
+module board_solid() {   // the PCB itself, seated. Nothing may share this space.
+    translate([0,0,plate_t+board_soff_h])
+        linear_extrude(board_pcb_t) square([board_l, board_w], center=true);
+}
+// the volume the board sweeps sliding in flat from the trailing end. Same
+// lesson as the panel: the path matters as much as the final position.
+module board_sweep() {
+    len = board_l + (board_l/2 + abs(plate_x0));
+    translate([board_l/2 - len, -board_w/2, plate_t+board_soff_h])
+        cube([len, board_w, board_pcb_t]);
+}
 module plate() {
     difference() {
         union() {
-            // asymmetric outline: 4mm margin left, 0.5mm on the USB side so the
-            // plate clears the lid rim while the board edge sits near the wall
-            translate([-1.75, 0, 0]) rbox(board_l+4.5, board_w+4, plate_t, 3);
-            for (sx=[-1,1], sy=[-1,1])
-                translate([sx*board_hole_dx/2, sy*board_hole_dy/2, plate_t-EPS])
-                    cylinder(d1=7, d2=6, h=board_soff_h+EPS);
+            translate([(plate_x0+plate_x1)/2, 0, 0])
+                rbox(plate_x1-plate_x0, 2*plate_y, plate_t, 3);
+            if (board_mount == "rails") {
+                rail_one();
+                mirror([0,1,0]) rail_one();
+                board_clamp();
+            } else {
+                for (sx=[-1,1], sy=[-1,1])
+                    translate([sx*board_hole_dx/2, sy*board_hole_dy/2, plate_t-EPS])
+                        cylinder(d1=7, d2=6, h=board_soff_h+EPS);
+            }
         }
-        for (sx=[-1,1], sy=[-1,1]) translate([sx*board_hole_dx/2, sy*board_hole_dy/2, -EPS])
-            cylinder(d=board_pilot, h=plate_t+board_soff_h+1);
+        if (board_mount == "screws")
+            for (sx=[-1,1], sy=[-1,1]) translate([sx*board_hole_dx/2, sy*board_hole_dy/2, -EPS])
+                cylinder(d=board_pilot, h=plate_t+board_soff_h+1);
+        if (board_mount == "rails")   // clamp screw pilot, right through
+            translate([board_clamp_cx, 0, -EPS])
+                cylinder(d=board_clamp_pl, h=plate_t+board_soff_h+1);
         for (sx=[-1,1], sy=[-1,1]) translate([sx*plate_hole_dx/2, sy*plate_hole_dy/2, -EPS]) {
             cylinder(d=3.5, h=plate_t+1);
             cylinder(d=6.6, h=1.2);   // head sits below board (use pan-head M3)
@@ -387,6 +479,12 @@ module stand() {
 if (part == "obstruction") {   // MUST render empty - see fit_check.sh
     intersection() { body(); panel_sweep(); }
 }
+if (part == "board_clash") {   // MUST render empty: the carrier may touch the
+    intersection() { plate(); board_solid(); }   // board, never occupy it
+}
+if (part == "board_sweep") {   // MUST render empty: the slide-in path is clear
+    intersection() { plate(); board_sweep(); }
+}
 if (part == "section") {   // vertical slice through the DevKitC USB axis
     intersection() {
         union() {
@@ -420,7 +518,7 @@ if (part == "assembly") {
     color("WhiteSmoke") translate([0,0,panel_seat]) rbox(panel_w, panel_h, panel_t, 0.6);
     color("SteelBlue")  lid_asm();
     color("Orange")     translate([board_cx, board_cy, lid_iz-plate_boss_h]) rotate([180,0,0]) plate();
-    color("Green")      translate([board_cx, board_cy, lid_iz-plate_boss_h-plate_t-board_soff_h-1.6]) rbox(board_l, board_w, 1.6, 1); // board mock
+    color("Green")      translate([board_cx, board_cy, lid_iz-plate_boss_h-plate_t-board_soff_h-board_pcb_t]) rbox(board_l, board_w, board_pcb_t, 1); // board mock
 }
 if (part == "clash") {   // body and lid must never want the same space
     intersection() { body(); lid_asm(); }
