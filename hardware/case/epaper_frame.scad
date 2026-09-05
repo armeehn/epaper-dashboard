@@ -96,7 +96,13 @@ board_clamp_d  = 6;     // clamp boss diameter
 board_clamp_pl = 2.05;  // clamp pilot: M2.5 self-tap
 board_clamp_hd = 4.7;   // M2.5 pan head diameter
 board_from_bot = 18;    // board lower edge above cavity inner bottom
-usb_h          = 14.8;  // CENTER of the DevKitC USB-C above lid inner floor ** TWEAK **
+// usb_h used to be an absolute number you had to stack up in your head, and
+// the 14.8 it held was stacked for a DevKitC sitting ON a carrier board: two
+// PCBs. One board is 3.6 mm shorter, which put the slot beside the glass
+// instead of above it. Measure the one number that is actually on the bench
+// and let the model do the arithmetic.
+usb_ctr_pcb    = 1.6;   // USB-C receptacle CENTRE above the board's component
+                        // face. ~1.6 for a 3.16 mm top-mount part ** MEASURE **
 usb_slot_w     = 14;    // wall slot width (Y) - sized to pass the plug overmold
 usb_slot_h     = 7.5;   // wall slot height (Z)
 
@@ -168,6 +174,9 @@ board_cx = rim_iw/2 - board_gap_right - board_l/2;
 board_cy = cav_y0 + board_from_bot + board_w/2;
 chg_cy   = cav_y0 + chg_from_bot + chg_w/2;
 chg_usb_ctr = chg_rail_h - 1.6;               // charger USB center above inner floor (USB faces the floor)
+// CENTRE of the board's USB-C below the lid's inner floor, straight off the
+// stack: boss -> plate -> standoff gap -> PCB -> connector.
+usb_h = plate_boss_h + plate_t + board_soff_h + board_pcb_t + usb_ctr_pcb;
 
 // board carrier, in plate-local coordinates (origin = board centre, z=0 = plate bottom)
 board_rail_h = board_soff_h + board_pcb_t + board_slot_z + board_lip_t;
@@ -189,6 +198,12 @@ stack = plate_boss_h + plate_t + board_soff_h + board_pcb_t + 2 + 1.6 + 3.2;
 assert(aa_bottom > 7, "aa_top looks wrong: bottom (FPC) border should be ~9.9");
 assert(stack < rim_len - 0.5, str("component stack ", stack, " too tall for rim_len ", rim_len));
 assert(usb_h + usb_slot_h/2 < rim_len + 2.6, "usb slot pokes past cavity depth");
+// The wall slots are cut 1 mm inside the pocket wall, so a slot at glass level
+// notches the wall the panel sits against. Both ports must clear the glass.
+assert(lid_iz - usb_h - usb_slot_h/2 > panel_back + 0.5,
+       "the board's port slot cuts into the panel pocket wall");
+assert(lid_iz - chg_usb_ctr - chg_usb_h/2 > panel_back + 0.5,
+       "the charger port slot cuts into the panel pocket wall");
 assert(board_cx - board_l/2 > cav_x0 + 2, "board hits the left rim");
 assert(board_cy - board_w/2 > cav_y0 + 1, "board hangs below cavity");
 assert(board_cx + plate_x1 < rim_iw/2 - 0.4, "plate hits the lid rim");
@@ -220,6 +235,8 @@ assert(norm([pocket_w/2 - relief_c, pocket_h/2 - relief_c] - [panel_w/2, panel_h
 assert(clr >= 0.5, "panel clearance below print tolerance on a 170 mm span");
 echo(str(">> outer: ", outer_w, " x ", outer_h, " x ", depth, " mm, window ", win_w, " x ", win_h));
 echo(str(">> component stack ", stack, " / ", rim_len, " mm; usb_h=", usb_h));
+echo(str(">> board ", board_l, " x ", board_w, " x ", board_pcb_t,
+         " mm, mount=", board_mount, ", plate ", plate_x1-plate_x0, " x ", 2*plate_y));
 
 // =====================================================================
 // HELPERS

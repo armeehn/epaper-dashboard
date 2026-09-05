@@ -37,6 +37,13 @@ on `main`.
 - README trimmed by ~40%; detail lives in `docs/`.
 
 ### Fixed
+- **The USB slot was cut for a two-PCB stack, 3.6 mm too high.** `usb_h` was
+  an absolute 14.8 mm stacked up by hand for a DevKitC sitting on a carrier
+  board. With one board it put the slot beside the glass rather than above
+  it, notching the pocket wall the panel rests against, and left the plug
+  unable to reach the receptacle. It is now derived from `usb_ctr_pcb`, the
+  one number that can be measured on the bench, and two asserts fail if
+  either port slot reaches down to glass level. The old 14.8 trips them.
 - **The board carrier assumed mounting holes the board does not have.** The
   plate held the board on four standoffs with M2.5 screws, and the 38-pin
   DevKitC, like most ESP32 dev boards, has no mounting holes at all. The

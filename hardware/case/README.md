@@ -1,12 +1,14 @@
 # 7.5" Tri-Color e-Paper Frame Case
 
 A desk + wall picture-frame case for the Waveshare 7.5" red/black/white e-paper raw panel
-(800x480, ASIN B09JSFTGV6), a custom ESP32 carrier board (38-pin DevKitC with USB-C,
-headers removed), a TP4056-style USB-C charger module, and a LiPo pouch cell.
+(800x480, ASIN B09JSFTGV6), a TP4056-style USB-C charger module, and a LiPo pouch cell.
+The defaults are dimensioned for the **Waveshare e-Paper ESP32 Driver Board** (29.46 x
+48.25 mm, USB-C, 5V), but the carrier is parametric and grips any board by its outline.
 
 Overall size: **189.4 x 124.1 x 24.7 mm**, uniform 11.5 mm frame border around the image.
-Both USB-C ports exit the **right edge**: the DevKitC port (lower) and the charger port (upper).
-The back lid carries all the electronics, so opening the case never disturbs the panel.
+Both USB-C ports exit the **right edge**: the board's port (lower) and the charger port
+(upper). The back lid carries all the electronics, so opening the case never disturbs
+the panel.
 
 ## The panel pocket is empty on purpose
 
@@ -65,7 +67,9 @@ The body needs a 200 x 130 mm bed minimum (fits any 220x220 printer).
 - 1x LiPo pouch cell up to 50 x 34 x 11 mm (103450 or smaller)
 - 1 mm foam tape strips, two runs: one on the front ledge under the glass, one on the
   panel's rear border. Both are in the model, so do not skip either or add a third.
-- Optional: 5V boost module if your carrier board expects 5V rather than raw LiPo voltage
+- 1x 5V boost module. **Not optional on the Waveshare driver board**, whose manual gives
+  its operating voltage as 5V: a LiPo at 3.7V will not run it. Zip-tie bridges on the lid
+  floor are the only mount for it so far.
 
 ## Before you print: three measurements
 
@@ -77,15 +81,19 @@ datasheet:
    the active (image) area, in mm. The panel's borders are asymmetric: about 3.5 on the
    sides and top, about 9.9 on the ribbon side. If your measurement differs, edit it,
    otherwise the window may show a sliver of white border.
-2. **`board_l` / `board_w` / `board_pcb_t` (60 x 40 x 1.6)**: your board's outline and
+2. **`board_l` / `board_w` / `board_pcb_t` (48.25 x 29.46 x 1.6)**: your board's outline and
    thickness. These are the only board numbers the default carrier uses, because it
    grips the outline rather than a hole pattern. Only the small plate needs reprinting
    if you got them wrong. (With `board_mount = "screws"`, `board_hole_dx` /
    `board_hole_dy` matter instead.)
-3. **`usb_h` (default 14.8)**: height of the DevKitC USB-C connector center above the
-   lid's inner floor once the board is screwed to the plate. Stack it up: boss 3.5 +
-   plate 2 + standoff 2.5 + carrier PCB + gap + DevKitC PCB + half the connector.
-   The wall slot is 7.5 mm tall so there is about 3 mm of forgiveness.
+3. **`usb_ctr_pcb` (default 1.6)**: the centre of the USB-C receptacle above the board's
+   component face. That is about 1.6 for a 3.16 mm top-mount part, but measure it.
+   `usb_h`, where the wall slot actually goes, is derived from it and from the rest of
+   the stack, so this is the only number you supply. The slot is 7.5 mm tall against a
+   2.4 mm plug shell, giving roughly 2.4 mm of forgiveness each way. Get it wrong by
+   more and the plug will not go in; get it wrong by a lot and `fit_check.sh` says so,
+   because a slot low enough to miss the plug is also low enough to notch the pocket
+   wall the glass sits against.
 
 Regenerate everything after editing:
 
