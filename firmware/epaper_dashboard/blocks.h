@@ -97,6 +97,12 @@ String blockSubstUrl(const BlockDef& def, JsonObjectConst instParams);
 bool blockUrlAllowed(const String& url, char* err, size_t errLen);
 // Template "{x} text {y}" -> resolved via values in data.
 void blockTemplate(const char* tmpl, const BlockData& d, char* out, size_t outLen);
+// True when every char of s has a glyph in the big-number font ('-' '.' '/'
+// digits ':'). Anything else measures zero width there and draws blank.
+bool blockBigNumDrawable(const char* s);
+// Rows a list frame with room for `avail` rows should draw: all of them, or
+// avail-1 plus one "+N more" marker. *hidden = N (0 when everything fits).
+int blockListVisible(int nRows, int avail, int* hidden);
 
 // ---- device fetch (HTTPClient; stubbed on host) ----
 bool blockFetch(const BlockDef& def, JsonObjectConst instParams, BlockData& out);

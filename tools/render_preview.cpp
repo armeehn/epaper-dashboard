@@ -107,6 +107,40 @@ int main(int, char**) {
     }
   render("preview_blocks.ppm");
 
+  // ---- scene 5: what a widget does with content it cannot draw ----
+  // A big-number bound to a non-numeric value ("n/a", "$42") and a list
+  // handed more rows than its frame holds. Both once drew blank space,
+  // which on a wall is indistinguishable from good news.
+  const char* limitsLayout =
+    "[{\"inst\":\"clk\",\"block\":\"core-clock\",\"x\":0,\"y\":0,\"w\":7,\"h\":3},"
+    "{\"inst\":\"dat\",\"block\":\"core-datestatus\",\"x\":7,\"y\":0,\"w\":9,\"h\":3},"
+    "{\"inst\":\"gh\",\"block\":\"github-stars\",\"x\":0,\"y\":3,\"w\":5,\"h\":3},"
+    "{\"inst\":\"btc\",\"block\":\"crypto-price\",\"x\":0,\"y\":6,\"w\":5,\"h\":3,"
+      "\"params\":{\"coin\":\"bitcoin\"}},"
+    "{\"inst\":\"hn\",\"block\":\"hackernews-top\",\"x\":5,\"y\":3,\"w\":11,\"h\":3},"
+    "{\"inst\":\"hn2\",\"block\":\"hackernews-top\",\"x\":5,\"y\":6,\"w\":11,\"h\":6}]";
+  if (!layoutSave(limitsLayout, strlen(limitsLayout), err, sizeof(err))) {
+    printf("layoutSave FAIL: %s\n", err);
+    return 1;
+  }
+  prepareLayout();
+  for (int i = 0; i < s_nContrib; i++) {
+    ContribSlot& c = s_contrib[i];
+    if (!c.loaded) continue;
+    blockSampleData(c.def, c.data);
+    BlockData& d = c.data;
+    if (!strcmp(c.inst, "gh")) strcpy(d.values[0].text, "n/a");
+    if (!strcmp(c.inst, "btc")) strcpy(d.values[0].text, "$42");
+    if (!strcmp(c.def.id, "hackernews-top")) {
+      d.nRows = 6;
+      for (int r = 0; r < 6; r++) {
+        snprintf(d.rows[r].primary, sizeof(d.rows[0].primary), "Story number %d", r + 1);
+        snprintf(d.rows[r].secondary, sizeof(d.rows[0].secondary), "%d", 600 - r * 90);
+      }
+    }
+  }
+  render("preview_widget_limits.ppm");
+
   printf("previews written\n");
   return 0;
 }
