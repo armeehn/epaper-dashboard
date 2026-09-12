@@ -364,6 +364,39 @@ bool blockFetch(const BlockDef& def, JsonObjectConst instParams, BlockData& out)
   return true;
 }
 
+// ---------------- widget limits ----------------
+
+// DashTempFont is generated for temperatures: 0x2D..0x3A only.
+static const char BIGNUM_FIRST = '-';
+static const char BIGNUM_LAST  = ':';
+
+bool blockBigNumDrawable(const char* s) {
+  if (!s || !*s) {
+    return false;
+  }
+  for (; *s; s++) {
+    if (*s < BIGNUM_FIRST || *s > BIGNUM_LAST) {
+      return false;
+    }
+  }
+  return true;
+}
+
+int blockListVisible(int nRows, int avail, int* hidden) {
+  if (avail < 0) {
+    avail = 0;
+  }
+  if (nRows <= avail) {
+    *hidden = 0;
+    return nRows;
+  }
+
+  // The last slot goes to the marker so the reader learns the list is cut.
+  int shown = avail > 0 ? avail - 1 : 0;
+  *hidden = nRows - shown;
+  return shown;
+}
+
 void blockSampleData(const BlockDef& def, BlockData& out) {
   out = BlockData();
   out.ok = true;

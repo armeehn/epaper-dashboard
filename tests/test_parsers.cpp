@@ -377,6 +377,28 @@ static void testBlocks() {
   String url = blockSubstUrl(def, ip.as<JsonObjectConst>());
   CHECK_STR(url.c_str(), "https://api.example.com/x?q=x%26y", "url subst+encode");
 
+  // The big-number font only holds '-' '.' '/' digits ':'; anything else
+  // must go to a full font or it draws blank.
+  CHECK(blockBigNumDrawable("-12.5"), "bignum digits drawable");
+  CHECK(blockBigNumDrawable("9/10:3"), "bignum slash colon drawable");
+  CHECK(!blockBigNumDrawable("$42"), "bignum prefix not drawable");
+  CHECK(!blockBigNumDrawable("n/a"), "bignum letters not drawable");
+  CHECK(!blockBigNumDrawable("42 %"), "bignum space/percent not drawable");
+  CHECK(!blockBigNumDrawable(""), "bignum empty not drawable");
+
+  // A list frame that cannot hold every row gives its last slot to "+N more".
+  int hidden = -1;
+  CHECK_EQ(blockListVisible(3, 6, &hidden), 3, "list fits: all rows");
+  CHECK_EQ(hidden, 0, "list fits: nothing hidden");
+  CHECK_EQ(blockListVisible(6, 6, &hidden), 6, "list exact: all rows");
+  CHECK_EQ(hidden, 0, "list exact: nothing hidden");
+  CHECK_EQ(blockListVisible(6, 3, &hidden), 2, "list cut: rows before marker");
+  CHECK_EQ(hidden, 4, "list cut: marker counts the rest");
+  CHECK_EQ(blockListVisible(6, 1, &hidden), 0, "list one slot: marker only");
+  CHECK_EQ(hidden, 6, "list one slot: all hidden");
+  CHECK_EQ(blockListVisible(2, 0, &hidden), 0, "list no room: nothing drawn");
+  CHECK_EQ(hidden, 2, "list no room: all hidden");
+
   // IMAP auto-detection turns a typed domain into connection attempts, so the
   // same LAN-probing concerns as block URLs apply.
   CHECK(mailDomainAllowed("example.com"), "mail domain ok");

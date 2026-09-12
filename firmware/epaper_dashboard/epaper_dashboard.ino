@@ -541,13 +541,17 @@ static void drawContribBlock(const BlockDef& def, const BlockData& d,
       blockTemplate(def.wValue, d, buf, sizeof(buf));
       display.setFont(&DashTempFont);
       String v(buf);
+      // Letters and symbols have no glyph in DashTempFont: they measure zero
+      // and draw blank ("$42" became "42"), so the width test alone never
+      // sent them to the real font. Ask the glyph question first.
+      bool bigFont = blockBigNumDrawable(buf) && textWidth(v) <= (uint16_t)(w - 24);
       if (y + h - cy < 76) {                    // short block: compact value
         display.setFont(&FreeSansBold18pt7b);
         printAt(x + 12, cy + 28, fitStr(v, w - 24), def.accentRed ? GxEPD_RED : GxEPD_BLACK);
         break;
       }
-      if (textWidth(v) > (uint16_t)(w - 24)) {
-        display.setFont(&FreeSansBold18pt7b);   // fall back for long values
+      if (!bigFont) {
+        display.setFont(&FreeSansBold18pt7b);   // fall back for long or non-numeric values
         if (textWidth(v) > (uint16_t)(w - 24)) v = fitStr(v, w - 24);
         printAt(x + 12, cy + 40, v, def.accentRed ? GxEPD_RED : GxEPD_BLACK);
         cy += 48;
@@ -563,15 +567,25 @@ static void drawContribBlock(const BlockDef& def, const BlockData& d,
       break;
     }
     case BW_LIST: {
+      const int16_t rowH = 22;
       int16_t yy = cy + 18;
-      for (int i = 0; i < d.nRows; i++) {
-        if (yy > y + h - 6) break;
+      // Rows past the frame's bottom used to vanish without a trace, and
+      // the row lost first is whichever the feed put last (its own "+N
+      // more" notice, typically). Spend the last slot on a marker instead.
+      int avail = (y + h - 6 - yy) / rowH + 1;
+      int hidden = 0;
+      int shown = blockListVisible(d.nRows, avail, &hidden);
+      display.setFont(&FreeSans9pt7b);
+      for (int i = 0; i < shown; i++) {
         display.fillCircle(x + 16, yy - 5, 3, def.accentRed ? GxEPD_RED : GxEPD_BLACK);
-        display.setFont(&FreeSans9pt7b);
         int16_t secW = d.rows[i].secondary[0] ? 52 : 0;
         printAt(x + 26, yy, fitStr(d.rows[i].primary, w - 40 - secW), GxEPD_BLACK);
         if (secW) printRight(x + w - 12, yy, d.rows[i].secondary, GxEPD_BLACK);
-        yy += 22;
+        yy += rowH;
+      }
+      if (hidden && avail > 0) {
+        snprintf(buf, sizeof(buf), "+%d more", hidden);
+        printAt(x + 26, yy, buf, GxEPD_RED);
       }
       break;
     }

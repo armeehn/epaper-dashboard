@@ -5,6 +5,15 @@ on `main`.
 
 ## Unreleased
 
+### Fixed
+- Contributed widgets no longer drop content in silence. A `big-number`
+  value with any character outside the digit font (`$42`, `n/a`) drew the
+  digits alone or nothing; it now falls back to the full font. A `list`
+  with more rows than its frame holds cut them without a trace; the last
+  slot now reads `+N more`. `blockBigNumDrawable()` and
+  `blockListVisible()` carry the rules, with sixteen unit checks and a
+  `preview_widget_limits` scene in `tools/render_preview.cpp`.
+
 ### Added
 - `hardware/case/fit_check.sh` and `hardware/case/render.sh`: the case's four
   fit invariants as a runnable check (the panel's insertion path, body against
