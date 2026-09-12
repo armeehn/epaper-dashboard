@@ -1,14 +1,26 @@
 # 7.5" Tri-Color e-Paper Frame Case
 
 A desk + wall picture-frame case for the Waveshare 7.5" red/black/white e-paper raw panel
-(800x480, ASIN B09JSFTGV6), a TP4056-style USB-C charger module, and a LiPo pouch cell.
-The defaults are dimensioned for the **Waveshare e-Paper ESP32 Driver Board** (29.46 x
-48.25 mm, USB-C, 5V), but the carrier is parametric and grips any board by its outline.
+(800x480, ASIN B09JSFTGV6). The defaults are dimensioned for the **Waveshare e-Paper
+ESP32 Driver Board** (29.46 x 48.25 mm, USB-C, 5V), but the carrier is parametric and
+grips any board by its outline.
 
 Overall size: **189.4 x 124.1 x 24.7 mm**, uniform 11.5 mm frame border around the image.
-Both USB-C ports exit the **right edge**: the board's port (lower) and the charger port
-(upper). The back lid carries all the electronics, so opening the case never disturbs
-the panel.
+The back lid carries all the electronics, so opening the case never disturbs the panel.
+
+`power = "usb"` (the default) feeds the board through its own USB-C, which exits the
+**right edge**, and that is the only opening in the case. `power = "battery"` adds a
+TP4056-style charger, a LiPo pouch cell, their mounts, and a second USB-C port above the
+first. Nothing in a USB build is drilled for hardware it does not have.
+
+## Board orientation
+
+Hold the driver board with its USB-C **up**: the FPC connector is on the **left** edge.
+In the case the USB faces the right wall, which puts that FPC edge along the **top** of
+the cavity, roughly 75 mm from where the panel's ribbon comes through the rim relief at
+the bottom centre. The panel's own ribbon does not reach that far. Use the FFC extension
+cable the board ships with, and route it in the 8.4 mm of space between the board's
+component face and the back of the glass.
 
 ## The panel pocket is empty on purpose
 
@@ -63,13 +75,13 @@ The body needs a 200 x 130 mm bed minimum (fits any 220x220 printer).
 - 4x M3 x 12 self-tapping screws (through the lid, into the body's side walls)
 - 4x M3 x 6 self-tapping screws (plate onto the lid bosses)
 - 1x M2.5 x 6 self-tapping screw (the board clamp; 4x if `board_mount = "screws"`)
-- 1x TP4056-style USB-C charger module (~28 x 17.5 mm), slides into the printed rails
-- 1x LiPo pouch cell up to 50 x 34 x 11 mm (103450 or smaller)
+- `power = "battery"` only: 1x TP4056-style USB-C charger module (~28 x 17.5 mm), which
+  slides into the printed rails, and 1x LiPo pouch cell up to 50 x 34 x 11 mm
 - 1 mm foam tape strips, two runs: one on the front ledge under the glass, one on the
   panel's rear border. Both are in the model, so do not skip either or add a third.
-- 1x 5V boost module. **Not optional on the Waveshare driver board**, whose manual gives
-  its operating voltage as 5V: a LiPo at 3.7V will not run it. Zip-tie bridges on the lid
-  floor are the only mount for it so far.
+- `power = "battery"` only: 1x 5V boost module. **Not optional on a battery build of the
+  Waveshare driver board**, whose manual gives its operating voltage as 5V: a LiPo at
+  3.7V will not run it. Zip-tie bridges on the lid floor are the only mount for it.
 
 ## Before you print: three measurements
 
@@ -128,15 +140,15 @@ in your slicer (and `plate.stl` if your hole pattern is asymmetric).
    until its USB edge meets the two stops. Drive one M2.5 x 6 screw into the boss
    behind the trailing edge; its head laps over the board and holds it there. Screw
    the plate to the lid bosses (M3 x 6) with the USB-C facing the right rim wall.
-4. Slide the charger module into its rails near the top-right, USB-C outward,
-   components facing the lid floor so the charge LEDs show through the peek slot.
-   The small nubs snap over the PCB.
-5. Put the battery in the fenced pocket (foam pad under it, strap through the fence
-   slots if you want it extra secure). Route wires: battery -> charger B+/B-,
-   charger OUT -> your board's power input. If your board wants 5V on VIN, put a
-   boost module between charger OUT and the board (zip-tie bridges are provided
-   on the lid floor next to the fence).
-6. Plug the panel ribbon into the board's FPC connector, lower the lid straight on
+4. On a USB build, skip to step 6: the board's own USB-C is the supply and the case has
+   no other opening. The steps below are for `power = "battery"`.
+5. Slide the charger module into its rails near the top-right, USB-C outward, components
+   facing the lid floor so the charge LEDs show through the peek slot; the small nubs
+   snap over the PCB. Put the cell in the fenced pocket (foam pad under it, strap through
+   the fence slots). Route battery -> charger B+/B-, charger OUT -> 5V boost -> the
+   board's power input, using the zip-tie bridges on the lid floor.
+6. Join the panel's ribbon to the board's FPC connector with the FFC extension cable,
+   leaving a gentle loop rather than a fold. Lower the lid straight on
    (the rim slides inside the body walls, the flange lands on the rear shoulder),
    and drive the 4 corner screws (M3 x 12).
 
