@@ -46,6 +46,17 @@ on `main`.
 - README trimmed by ~40%; detail lives in `docs/`.
 
 ### Fixed
+- **A USB-powered build was drilled for a battery it does not have.** The
+  charger, the cell, their mounts and a second USB-C hole in the right wall
+  were unconditional. `power = "usb"`, now the default, omits all of it: on a
+  board fed through its own USB-C there is one opening in the case and
+  nothing else. `power = "battery"` restores the lot.
+- **The component stack still counted a PCB that is not there.** `stack`
+  carried `+ 2 + 1.6` for a second board, from the same phantom
+  DevKitC-on-carrier build that put the USB slot too high. It is now the real
+  single-board stack and comes to 12.8 mm against 17 mm of rim. The rim is
+  not sized by the stack anyway: what sets it is the port slot having to
+  clear the glass, which is what the assert checks.
 - **The USB slot was cut for a two-PCB stack, 3.6 mm too high.** `usb_h` was
   an absolute 14.8 mm stacked up by hand for a DevKitC sitting on a carrier
   board. With one board it put the slot beside the glass rather than above
@@ -62,7 +73,8 @@ on `main`.
   than a snap hook because the board goes in flat: a hook tall enough to hold
   it would be tall enough to block it. `board_mount = "screws"` keeps the old
   arrangement for boards that do have holes. `fit_check.sh` intersects the
-  carrier with the board and with the path the board slides along.
+  carrier with the board and with the path the board slides along, and an
+  assert rejects a `"screws"` hole pattern that falls outside the board.
 - **The case could not be assembled: the panel had no way in.** The four lid
   screw pillars stood inside the panel pocket, 8.3 mm into it at each corner,
   narrowing the 170.2 mm opening to 154.2 mm of clear span. 4.1 cm3 of plastic

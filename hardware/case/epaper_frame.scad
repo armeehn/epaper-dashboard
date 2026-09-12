@@ -20,6 +20,11 @@
 
 part = "assembly"; // ["body","lid","plate","stand","assembly"]
 
+// Where the board's power comes from. "usb" means the board is fed through
+// its own USB-C and there is no cell: no charger, no battery fence, and no
+// second hole in the right wall. A hole with nothing behind it is a hole.
+power = "usb";     // ["usb","battery"]
+
 $fn = 48;
 EPS = 0.01;
 
@@ -45,7 +50,9 @@ reveal    = 1.6;    // window opening beyond active area, per side
 win_ch    = 2.0;    // 45-deg outward chamfer around the window
 foam_fr   = 1.0;    // foam tape on the front ledge, under the glass
 foam_t    = 1.0;    // foam tape on panel rear border, compressed by lid rim
-rim_len   = 17.0;   // interior depth for electronics
+rim_len   = 17.0;   // interior depth. Not set by the component stack, which
+                    // needs 12.8: the binding constraint is the port slot
+                    // clearing the glass, asserted below.
 rim_t     = 2.0;    // lid rim wall thickness
 lid_floor = 2.4;    // lid back plate thickness
 corner_r  = 5.0;    // outer corner radius
@@ -74,6 +81,8 @@ board_hole_dx  = 53;    // "screws" only: mounting-hole spacing X  ** MEASURE YO
 board_hole_dy  = 33;    // "screws" only: mounting-hole spacing Y  ** MEASURE YOUR BOARD **
 board_pilot    = 2.05;  // standoff pilot: 2.05 for M2.5 self-tap, 2.5 for M3
 board_soff_h   = 2.5;   // board underside above the plate (room for solder tails)
+board_tall     = 3.2;   // tallest part ON the board, facing the glass. 3.2 is
+                        // an ESP32-WROOM module                    ** MEASURE **
 board_gap_right= 2.0;   // board USB edge -> lid rim inner face (the stop lives here)
 
 // "rails" carrier. Everything here is printed against the board's OUTLINE,
@@ -193,7 +202,10 @@ boss_x = pocket_w/2 + boss_gap;
 boss_yt = shell_dy + outer_h/2 - boss_edge;
 boss_yb = shell_dy - outer_h/2 + boss_edge;
 
-stack = plate_boss_h + plate_t + board_soff_h + board_pcb_t + 2 + 1.6 + 3.2;
+// What actually has to fit between the lid floor and the glass. This used to
+// carry "+ 2 + 1.6" for a second PCB, from the same phantom DevKitC-on-carrier
+// build that put the USB slot 3.6 mm too high.
+stack = plate_boss_h + plate_t + board_soff_h + board_pcb_t + board_tall;
 
 assert(aa_bottom > 7, "aa_top looks wrong: bottom (FPC) border should be ~9.9");
 assert(stack < rim_len - 0.5, str("component stack ", stack, " too tall for rim_len ", rim_len));
@@ -202,7 +214,7 @@ assert(usb_h + usb_slot_h/2 < rim_len + 2.6, "usb slot pokes past cavity depth")
 // notches the wall the panel sits against. Both ports must clear the glass.
 assert(lid_iz - usb_h - usb_slot_h/2 > panel_back + 0.5,
        "the board's port slot cuts into the panel pocket wall");
-assert(lid_iz - chg_usb_ctr - chg_usb_h/2 > panel_back + 0.5,
+assert(power != "battery" || lid_iz - chg_usb_ctr - chg_usb_h/2 > panel_back + 0.5,
        "the charger port slot cuts into the panel pocket wall");
 assert(board_cx - board_l/2 > cav_x0 + 2, "board hits the left rim");
 assert(board_cy - board_w/2 > cav_y0 + 1, "board hangs below cavity");
@@ -216,6 +228,10 @@ assert(board_clamp_x - board_clamp_pl/2 > 0.2,
        "the clamp screw shank fouls the board's trailing edge");
 assert(board_slot_z >= 0.15, "no vertical slack under the lips: the board will bind");
 assert(board_lip + board_rail_clr < board_w/4, "the lips reach too far over the board");
+// "screws" mode carries its own hole pattern; it has to land on the board
+assert(board_mount != "screws" ||
+       (board_hole_dx < board_l - 3 && board_hole_dy < board_w - 3),
+       "board_hole_dx/dy fall outside the board outline: set your own pattern");
 // the plate-to-lid screws are on a fixed pattern; a small board shrinks the
 // plate around them, so check they still land on plate and not on the rails
 assert(plate_hole_dy/2 + 1.75 < board_w/2 + board_rail_clr,
@@ -236,7 +252,8 @@ assert(clr >= 0.5, "panel clearance below print tolerance on a 170 mm span");
 echo(str(">> outer: ", outer_w, " x ", outer_h, " x ", depth, " mm, window ", win_w, " x ", win_h));
 echo(str(">> component stack ", stack, " / ", rim_len, " mm; usb_h=", usb_h));
 echo(str(">> board ", board_l, " x ", board_w, " x ", board_pcb_t,
-         " mm, mount=", board_mount, ", plate ", plate_x1-plate_x0, " x ", 2*plate_y));
+         " mm, mount=", board_mount, ", plate ", plate_x1-plate_x0, " x ", 2*plate_y,
+         ", power=", power));
 
 // =====================================================================
 // HELPERS
@@ -312,7 +329,8 @@ module body() {
         panel_pocket();
         // port openings
         wall_slot(board_cy, lid_iz - usb_h, usb_slot_w, usb_slot_h);
-        wall_slot(chg_cy, lid_iz - chg_usb_ctr, chg_usb_w, chg_usb_h, 1.2);
+        if (power == "battery")
+            wall_slot(chg_cy, lid_iz - chg_usb_ctr, chg_usb_w, chg_usb_h, 1.2);
         // lid screws tap blind into the solid side walls
         at_bosses() translate([0,0,body_d-lid_tap_deep])
             cylinder(d=lid_pilot, h=lid_tap_deep+EPS);
@@ -373,15 +391,17 @@ module lid_asm() {
             for (sx=[-1,1], sy=[-1,1])                                         // plate bosses
                 translate([board_cx+sx*plate_hole_dx/2, board_cy+sy*plate_hole_dy/2, lid_iz-plate_boss_h])
                     cylinder(d=7.5, h=plate_boss_h+EPS);
-            translate([0, chg_cy, 0]) charger_mount();   // mount is modeled around y=0
-            // battery fence
-            translate([cav_x0+6+(batt_l+2*batt_fence_t)/2, cav_y0+26+(batt_w+2*batt_fence_t)/2, lid_iz-batt_fence_h])
-                difference() {
-                    rbox(batt_l+2*batt_fence_t, batt_w+2*batt_fence_t, batt_fence_h+EPS, 2);
-                    translate([0,0,-EPS]) rbox(batt_l, batt_w, batt_fence_h+1, 1.5);
-                    for (s=[-1,1]) translate([-batt_l/2-batt_fence_t-EPS, s*10-2.5, batt_fence_h-3.0])
-                        cube([batt_l+2*batt_fence_t+1, 5, 3.1]);   // strap slots
-                }
+            if (power == "battery") {
+                translate([0, chg_cy, 0]) charger_mount();   // modeled around y=0
+                // battery fence
+                translate([cav_x0+6+(batt_l+2*batt_fence_t)/2, cav_y0+26+(batt_w+2*batt_fence_t)/2, lid_iz-batt_fence_h])
+                    difference() {
+                        rbox(batt_l+2*batt_fence_t, batt_w+2*batt_fence_t, batt_fence_h+EPS, 2);
+                        translate([0,0,-EPS]) rbox(batt_l, batt_w, batt_fence_h+1, 1.5);
+                        for (s=[-1,1]) translate([-batt_l/2-batt_fence_t-EPS, s*10-2.5, batt_fence_h-3.0])
+                            cube([batt_l+2*batt_fence_t+1, 5, 3.1]);   // strap slots
+                    }
+            }
             translate([cav_x0+34, cav_y0+78, 0]) ziptie_bridge();              // spare module
             translate([cav_x0+34, cav_y0+94, 0]) ziptie_bridge();              // tie-downs
         }
@@ -398,13 +418,14 @@ module lid_asm() {
         // port slots through the rim right wall (bigger than the body slots
         // so the plug overmold passes straight through to the receptacle)
         rim_slot(board_cy, lid_iz - usb_h, usb_slot_w+2, usb_slot_h+1.5);
-        rim_slot(chg_cy, lid_iz - chg_usb_ctr, chg_usb_w+2, chg_usb_h+1);
+        if (power == "battery")
+            rim_slot(chg_cy, lid_iz - chg_usb_ctr, chg_usb_w+2, chg_usb_h+1);
         // pilot holes for the plate screws (blind: 0.6mm skin stays on the back)
         for (sx=[-1,1], sy=[-1,1])
             translate([board_cx+sx*plate_hole_dx/2, board_cy+sy*plate_hole_dy/2, lid_iz-plate_boss_h-EPS])
                 cylinder(d=2.5, h=plate_boss_h + lid_floor - 0.6);
         // charge LED peek slot
-        if (led_slot)
+        if (led_slot && power == "battery")
             translate([rim_iw/2-chg_l+3, chg_cy, lid_iz-EPS]) rbox(7, 12, lid_floor+1, 1.5);
     }
 }
