@@ -43,8 +43,8 @@ INC="-I $STUBS -I $DEPS/EpoxyDuino/cores/epoxy -I $DEPS/GxEPD2/src \
 CXX="g++ -std=gnu++17 $DEFS $INC -include $STUBS/prelude.h"
 CORE=$(ls "$DEPS"/EpoxyDuino/cores/epoxy/*.cpp | grep -v main.cpp)
 
-echo "== strict compile (11 translation units) =="
-for f in net_util settings imap ics caldav weather blocks blocksig fsstore portal; do
+echo "== strict compile (12 translation units) =="
+for f in net_util settings imap ics caldav weather blocks blocksig fsstore portal style; do
   $CXX -Wall -Wextra -Wno-unused-parameter -c "$FW/$f.cpp" -o "$BUILD/$f.o"
 done
 $CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ "$FW/epaper_dashboard.ino" -o "$BUILD/ino.o"
@@ -89,7 +89,7 @@ echo "   all portal/blocks/fsstore frames within ${STACK_MAX} bytes"
 echo "== unit tests (incl. real mbedTLS signature verification) =="
 $CXX -Wall -Wno-unused-parameter -o "$BUILD/test_parsers" "$ROOT/tests/test_parsers.cpp" \
   "$FW/net_util.cpp" "$FW/ics.cpp" "$FW/imap.cpp" "$FW/caldav.cpp" \
-  "$FW/settings.cpp" "$FW/blocks.cpp" "$FW/blocksig.cpp" "$FW/fsstore.cpp" \
+  "$FW/settings.cpp" "$FW/blocks.cpp" "$FW/blocksig.cpp" "$FW/fsstore.cpp" "$FW/style.cpp" \
   $CORE -L "$DEPS/mbedtls/library" -lmbedcrypto
 (cd "$ROOT" && "$BUILD/test_parsers")
 

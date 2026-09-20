@@ -42,11 +42,24 @@ These carry over regardless, because they are correctness rather than taste:
 - **Colour is never the only signal.** Especially true here: most panels cannot render
   colour at all.
 
+## The Riposte look (shipped)
+
+The brand is on the panel as an opt-in **look**, one of two, chosen at runtime under
+*Clock & refresh* (`firmware/epaper_dashboard/style.h`). It is not a reskin of the
+contributor-facing UI and not a block set: a block set would only have restyled
+contributed widgets, while the six built-ins (clock, date, weather, forecast, calendar,
+inbox) are where most of the ink is. What carries over to 1-bit:
+
+| Rule | On the panel |
+|---|---|
+| JetBrains Mono 400 / 700 / 800 | `RiposteFonts.h`: 9 pt and 12 pt regular and bold, 18 pt extra-bold, digit faces for the clock (105 px EM) and big numbers (65 px EM) |
+| Rules 2px solid | Section rules 2 px, spanning the column; the classic 3 px word-length underline stays classic-only |
+| Uppercase tracked labels | Titles and the date in capitals, 1 px tracking; the date reads `WED 23 SEP` |
+| Radius 0 | Square bullets in inbox and list widgets |
+| Colour is never the only signal | Unchanged: red folds to black on b/w panels in both looks |
+
 ## Queued
 
-- [ ] Ship a Riposte-branded *layout theme* in `registry/` — an opt-in block set using the
-      brand's type scale and rule weights. This is the right way to get the brand onto this
-      project: as one theme among several, not as a reskin of the contributor-facing UI.
 - [ ] Add the brand colophon to generated documentation only, not to the README (which
       should keep its OSS furniture).
 

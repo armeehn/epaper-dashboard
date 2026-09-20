@@ -92,6 +92,16 @@ before anything is stored, and a block is data rather than code — see
 a different registry is a runtime setting; trusting a different signing key
 needs a reflash.
 
+## Look
+
+*Clock & refresh* also picks the panel's **look**. *Classic* is the stock
+screen. *Riposte* sets everything — clock digits, built-ins, contributed
+widgets — in JetBrains Mono with 2 px rules across each column, upper-case
+tracked labels, a `WED 23 SEP` date and square bullets; the layout, data and
+grid are untouched. It is a runtime setting, so switching costs one refresh,
+not a reflash. Mono is wider than the classic face: a long row is shortened
+with `...` rather than spilling into the next block.
+
 ## Everyday behavior
 
 - **Refresh cadence** — aligned to wall-clock boundaries (:00/:05/…), minimum

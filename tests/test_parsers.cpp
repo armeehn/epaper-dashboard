@@ -9,6 +9,7 @@
 #include "../firmware/epaper_dashboard/imap.h"
 #include "../firmware/epaper_dashboard/caldav.h"
 #include "../firmware/epaper_dashboard/settings.h"
+#include "../firmware/epaper_dashboard/style.h"
 #include "../firmware/epaper_dashboard/blocks.h"
 #include "../firmware/epaper_dashboard/blocksig.h"
 #include "../firmware/epaper_dashboard/trusted_keys.h"
@@ -316,6 +317,7 @@ static void testSettings() {
   CHECK_EQ(g_set.imCount, MAXM, "count clamped");
   CHECK_EQ(g_set.refreshMin, 3, "refresh clamped to 3");
   CHECK(g_set.h24, "h24 flag");
+  CHECK_STR(g_set.look, "classic", "look defaults to classic");
 
   // re-apply with empty pass, same account -> secret kept
   JsonDocument d2;
@@ -683,6 +685,37 @@ static void testRegistryConformance() {
         "{param} in the URL host is refused");
 }
 
+static void testLook() {
+  printf("\n[look]\n");
+  CHECK(lookFromName("riposte") == Look::RIPOSTE, "riposte by name");
+  CHECK(lookFromName("classic") == Look::CLASSIC, "classic by name");
+  CHECK(lookFromName("") == Look::CLASSIC, "empty name is classic");
+  CHECK(lookFromName(nullptr) == Look::CLASSIC, "null name is classic");
+  CHECK(lookFromName("RIPOSTE") == Look::CLASSIC, "names are case-sensitive");
+  const Style& c = styleFor(Look::CLASSIC);
+  const Style& r = styleFor(Look::RIPOSTE);
+  CHECK(c.body != r.body && c.clock != r.clock && c.big != r.big, "looks use different faces");
+  CHECK(c.rule == 3 && r.rule == 2, "rule weights: classic 3 px, riposte 2 px");
+  CHECK(!c.upper && r.upper, "only riposte sets labels in caps");
+  // Both digit faces must cover exactly what blockBigNumDrawable() promises,
+  // or a value that passes the glyph test still draws blank.
+  CHECK(c.big->first == r.big->first && c.big->last == r.big->last, "big-number faces cover the same glyphs");
+  CHECK(c.clock->first == r.clock->first && c.clock->last == r.clock->last, "clock faces cover the same glyphs");
+  CHECK(r.big->first == '-' && r.big->last == ':', "big-number face is '-'..':'");
+  // A stored look round-trips through settings; an unknown one folds.
+  JsonDocument d;
+  d["wifi"]["ssid"] = "net";
+  d["look"]["style"] = "riposte";
+  CHECK(settingsApplyJson(d), "settings apply with look");
+  CHECK_STR(g_set.look, "riposte", "riposte look stored");
+  d["look"]["style"] = "neon";
+  CHECK(settingsApplyJson(d), "settings apply with unknown look");
+  CHECK_STR(g_set.look, "classic", "unknown look folds to classic");
+  JsonDocument out;
+  settingsToJson(out);
+  CHECK_STR(out["look"]["style"] | "", "classic", "look serialised for the portal");
+}
+
 int main(int, char**) {
   setenv("TZ", "PST8PDT,M3.2.0,M11.1.0", 1);
   tzset();
@@ -691,6 +724,7 @@ int main(int, char**) {
   testImapParse();
   testDavXml();
   testSettings();
+  testLook();
   testBlocks();
   testEpbAndStore();
   testRegistryIndex();
