@@ -312,10 +312,17 @@ static void drawDegree(int16_t x, int16_t y, int16_t r, uint16_t color) {
 // Title plus rule. Classic underlines the word in red; Riposte rules the
 // whole column (w) at the look's weight. ruleColor is the accent the caller
 // wants under the title (built-ins: red; contributed: red only if accented).
+// fitStr for a tracked label: a 16-char title in 9 pt mono is 186 px, a
+// 4-column block 176, and GFX wraps the overflow onto a second line.
+static String fitTracked(String s, uint16_t maxW) {
+  if (trackedWidth(s) <= maxW) return s;
+  while (s.length() > 1 && trackedWidth(s + "...") > maxW) s.remove(s.length() - 1);
+  return s + "...";
+}
 static void sectionHeader(int16_t x, int16_t yBase, int16_t w, const char* label,
                           uint16_t ruleColor, bool stale) {
   display.setFont(S().label);
-  String text = labelText(label);
+  String text = fitTracked(labelText(label), w - (stale ? 20 : 0));
   printTracked(x, yBase, text, GxEPD_BLACK);
   uint16_t tw = trackedWidth(text);
   thickHLine(x, yBase + 8, S().fullRule ? w : (int16_t)tw, S().rule, ruleColor);
@@ -358,10 +365,13 @@ static void drawClockBlock(int16_t x, int16_t y, int16_t w, int16_t h) {
   display.setFont(S().clock);
   display.getTextBounds(timeStr, 0, 0, &x1, &y1, &tw, &th);
   int16_t amRoom = g_set.h24 ? 0 : 64;
-  if ((int16_t)tw + 20 + amRoom > w) {
-    display.setFont(S().big);          // mid-size DejaVu digits
+  // Height counts too: an 84 px digit in a 2-row (80 px) block drew over
+  // whatever sat above it, since only the width was ever checked.
+  const int16_t vPad = 20;
+  if ((int16_t)tw + 20 + amRoom > w || (int16_t)th + vPad > h) {
+    display.setFont(S().big);          // mid-size digits
     display.getTextBounds(timeStr, 0, 0, &x1, &y1, &tw, &th);
-    if ((int16_t)tw + 20 + amRoom > w) {
+    if ((int16_t)tw + 20 + amRoom > w || (int16_t)th + vPad > h) {
       display.setFont(S().display);  // last resort, always fits
       display.getTextBounds(timeStr, 0, 0, &x1, &y1, &tw, &th);
     }
