@@ -18,7 +18,8 @@ Firmware: `PANEL_75_BW_GDEY` + `BOARD_XIAO_EPAPER`, or the
 `xiao-c3-75in-800x480-bw` image from CI. Wiring is fixed by the driver board
 (pins in [HARDWARE.md](HARDWARE.md#xiao-esp32-c3-on-the-xiao-epaper-driver-board--board_xiao_epaper)).
 Power is the XIAO's own USB-C; the driver board has a JST-PH battery input if
-a panel has to hang where there is no outlet. Seeed's own 7.5" mono panel
+a panel has to hang where there is no outlet. Cases for exactly this stack are
+the [RUTA series](../hardware/cases/): wall, pegboard, magnetic, desk. Seeed's own 7.5" mono panel
 ([$35.00](https://www.seeedstudio.com/7-5-Monochrome-ePaper-Display-with-800x480-Pixels-p-5788.html))
 is the same UC8179 glass and works on the same preset when Good Display is out
 of stock.
