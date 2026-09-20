@@ -6,6 +6,14 @@ on `main`.
 ## Unreleased
 
 ### Added
+- **The RUTA series** (`hardware/cases/`): four printed cases for the low-cost
+  XIAO build, one parametric model. One front frame (188 x 122 x 22 mm, 11 mm
+  border) and three snap-in backs: keyholes (RUTA), SKADIS pegboard hooks
+  (KROK), four disc magnets (FAST); STOD adds a 12 deg desk plinth with a cable
+  channel. No screws, no supports. The board drops onto four posts and is
+  held by the glass side, so the fit checks stay honest: `fit_check.sh` runs
+  on the series in CI. Catalogue renders (Cycles) and OpenSCAD previews are
+  checked in with the STLs.
 - **A second look for the panel.** *Clock & refresh → Look → Riposte* sets
   every widget, built-in or contributed, in JetBrains Mono with 2 px rules
   across the column, upper-case tracked labels, a `WED 23 SEP` date and

@@ -55,3 +55,6 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends openscad
       - name: Check the case fits together
         run: hardware/case/fit_check.sh
+      # The RUTA series shares the checker; it cds into hardware/case first.
+      - name: Check the RUTA series fits together
+        run: hardware/case/fit_check.sh ../cases/serie.scad
