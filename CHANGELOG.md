@@ -19,6 +19,13 @@ on `main`.
   Nine unit checks, `preview_riposte` scene, `docs/dashboard_riposte.png`.
 
 ### Fixed
+- **Text stays inside its block.** A section title wider than its block
+  wrapped onto a second line (a 16-character title in the Riposte look is
+  186 px; a 4-column block is 176), and the clock chose its digit size by
+  width alone, so a 2-row clock drew its 84 px digits over the block
+  above. Titles are now cut with `...` like every other row, and the clock
+  steps down for height as it did for width. The `preview_widget_limits`
+  scene carries both cases, in both looks.
 - Contributed widgets no longer drop content in silence. A `big-number`
   value with any character outside the digit font (`$42`, `n/a`) drew the
   digits alone or nothing; it now falls back to the full font. A `list`

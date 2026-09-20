@@ -63,8 +63,8 @@ int main(int, char**) {
   const char* base = "registry/blocks";   // run the preview from the repo root
   char err[96];
   EpbInfo info;
-  const char* names[3] = {"hackernews-top", "crypto-price", "github-stars"};
-  for (int i = 0; i < 3; i++) {
+  const char* names[4] = {"hackernews-top", "crypto-price", "github-stars", "next-holidays"};
+  for (int i = 0; i < 4; i++) {
     char p[160];
     snprintf(p, sizeof(p), "%s/%s/%s.epb", base, names[i], names[i]);
     String epb = readAll(p);
@@ -117,10 +117,15 @@ int main(int, char**) {
   // A big-number bound to a non-numeric value ("n/a", "$42") and a list
   // handed more rows than its frame holds. Both once drew blank space,
   // which on a wall is indistinguishable from good news.
+  // The clock gets two rows, which its 84 px digits do not fit: it must
+  // step down rather than draw over the date strip. GitHub stars gets four
+  // columns; UPCOMING HOLIDAYS gets four, which its title does not fit in
+  // either look, and must end in "..." rather than wrap.
   const char* limitsLayout =
-    "[{\"inst\":\"clk\",\"block\":\"core-clock\",\"x\":0,\"y\":0,\"w\":7,\"h\":3},"
+    "[{\"inst\":\"clk\",\"block\":\"core-clock\",\"x\":0,\"y\":0,\"w\":7,\"h\":2},"
     "{\"inst\":\"dat\",\"block\":\"core-datestatus\",\"x\":7,\"y\":0,\"w\":9,\"h\":3},"
     "{\"inst\":\"gh\",\"block\":\"github-stars\",\"x\":0,\"y\":3,\"w\":5,\"h\":3},"
+    "{\"inst\":\"hol\",\"block\":\"next-holidays\",\"x\":0,\"y\":9,\"w\":4,\"h\":3},"
     "{\"inst\":\"btc\",\"block\":\"crypto-price\",\"x\":0,\"y\":6,\"w\":5,\"h\":3,"
       "\"params\":{\"coin\":\"bitcoin\"}},"
     "{\"inst\":\"hn\",\"block\":\"hackernews-top\",\"x\":5,\"y\":3,\"w\":11,\"h\":3},"
@@ -146,6 +151,9 @@ int main(int, char**) {
     }
   }
   render("preview_widget_limits.ppm");
+  strcpy(g_set.look, LOOK_RIPOSTE);
+  render("preview_widget_limits_riposte.ppm");
+  strcpy(g_set.look, LOOK_CLASSIC);
 
   printf("previews written\n");
   return 0;
