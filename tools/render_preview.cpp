@@ -107,6 +107,12 @@ int main(int, char**) {
     }
   render("preview_blocks.ppm");
 
+  // ---- scene 4b: the same layout and data in the Riposte look ----
+  // One setting, no layout change: fonts, rules and bullets all follow it.
+  strcpy(g_set.look, LOOK_RIPOSTE);
+  render("preview_riposte.ppm");
+  strcpy(g_set.look, LOOK_CLASSIC);
+
   // ---- scene 5: what a widget does with content it cannot draw ----
   // A big-number bound to a non-numeric value ("n/a", "$42") and a list
   // handed more rows than its frame holds. Both once drew blank space,

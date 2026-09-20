@@ -7,6 +7,10 @@ Bundled in this repository:
 - **DejaVu Serif Bold** — the generated digit glyphs in `ClockFont.h` /
   `TempFont.h` are rasterized from DejaVu fonts (Bitstream Vera license +
   public-domain additions; free to embed and redistribute).
+- **JetBrains Mono** — the seven faces in `RiposteFonts.h` are rasterized
+  from JetBrains Mono (SIL Open Font License 1.1, © 2020 The JetBrains Mono
+  Project Authors; embedding in a program is permitted, and the font is not
+  sold on its own here).
 
 Fetched at build/verification time (not vendored):
 

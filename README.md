@@ -30,6 +30,8 @@ testing each step live. Credentials never leave the board.
 - **Blocks** on a 16×12 grid, arranged from your browser, plus signed community
   blocks that are **data, never code**
 - **OTA updates** from the same page, and CI that builds every flashable binary
+- **Two looks**: the classic screen, or **Riposte** (JetBrains Mono, 2 px rules,
+  spec-sheet labels), switched from the setup page — see [Brand](#brand)
 
 ## Hardware
 
@@ -105,6 +107,13 @@ presets. Contributions welcome: **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 ## Brand
 
 This project follows the [Riposte Laboratories design system](https://github.com/armeehn/riposte-brand)
-in its documentation. The contributor-facing `web/` UI **deliberately stays on Bootstrap** so
+in its documentation, and ships it as an **opt-in look for the panel**: *Clock &
+refresh → Look → Riposte* sets every built-in and contributed widget in JetBrains
+Mono with 2 px rules across the column, upper-case tracked labels and square
+bullets. The classic look stays pixel-identical.
+
+![the Riposte look](docs/dashboard_riposte.png)
+
+The contributor-facing `web/` UI **deliberately stays on Bootstrap** so
 outside contributors can read and patch it without learning a house design system first —
 see [`BRAND.md`](BRAND.md) for that decision and its reasoning before opening a restyle PR.

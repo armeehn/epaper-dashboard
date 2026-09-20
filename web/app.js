@@ -679,6 +679,7 @@ function cfg() {
     clock: { h24: $('ck-h24').value === '1', tz: posix || 'UTC0', tzname: iana },
     refresh: { min: parseInt($('rf-min').value), quiet: $('qt-on').checked,
                qs: parseInt($('qt-start').value), qe: parseInt($('qt-end').value) },
+    look: { style: $('lk-style').value },
   };
 }
 function buildReview() {
@@ -691,6 +692,7 @@ function buildReview() {
     row('Calendar', c.cal.mode === 'none' ? 'disabled' : `${c.cal.mode.toUpperCase()}: <span class="mono">${esc((state.calName || c.cal.url).slice(0, 60))}</span>`) +
     row('Weather', c.wx.place ? `${esc(c.wx.place)} (${c.wx.unitT === 'f' ? '°F' : '°C'})` : 'not set', c.wx.place ? '' : 'no location') +
     row('Clock', (c.clock.h24 ? '24-hour' : '12-hour') + ' · ' + esc(c.clock.tzname)) +
+    row('Look', c.look.style === 'riposte' ? 'Riposte' : 'Classic') +
     row('Refresh', `every ${c.refresh.min} min` + (c.refresh.quiet ? `, paused ${$('qt-start').selectedOptions[0].text}–${$('qt-end').selectedOptions[0].text}` : '')) +
     row('Blocks', state.installed.length ? esc(state.installed.join(', ')) : 'built-ins only');
 }
@@ -765,6 +767,7 @@ function prefill(c) {
       $('wx-unitT').value = c.wx.unitT || 'c'; $('wx-unitW').value = c.wx.unitW || 'mph';
     }
     if (c.clock) { $('ck-h24').value = c.clock.h24 ? '1' : '0'; if (c.clock.tzname) preselectTz(c.clock.tzname); }
+    if (c.look && c.look.style) { $('lk-style').value = c.look.style; }
     if (c.refresh) {
       $('rf-min').value = String(c.refresh.min || 5); $('qt-on').checked = !!c.refresh.quiet;
       $('qt-start').value = c.refresh.qs ?? 0; $('qt-end').value = c.refresh.qe ?? 6;

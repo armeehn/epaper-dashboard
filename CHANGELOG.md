@@ -5,6 +5,19 @@ on `main`.
 
 ## Unreleased
 
+### Added
+- **A second look for the panel.** *Clock & refresh → Look → Riposte* sets
+  every widget, built-in or contributed, in JetBrains Mono with 2 px rules
+  across the column, upper-case tracked labels, a `WED 23 SEP` date and
+  square bullets, per the Riposte Laboratories design system (`BRAND.md`).
+  `style.h` carries the two `Style` tables; the drawing code asks `S()` for
+  its faces instead of naming them, so a third look is one more table. The
+  classic look is byte-identical to before (all five preview scenes compared).
+  `tools/make_riposte_fonts.py` generates the seven faces (~21 KB of flash)
+  through a `gfx_font()` now shared with `make_gfx_font.py`;
+  `tools/frame_preview.py` puts a preview scene in the docs bezel.
+  Nine unit checks, `preview_riposte` scene, `docs/dashboard_riposte.png`.
+
 ### Fixed
 - Contributed widgets no longer drop content in silence. A `big-number`
   value with any character outside the digit font (`$42`, `n/a`) drew the

@@ -19,7 +19,7 @@ g++ -std=gnu++17 -w $DEFS \
   -o "$BUILD/render_preview" "$ROOT/tools/render_preview.cpp" \
   "$FW/net_util.cpp" "$FW/settings.cpp" "$FW/imap.cpp" "$FW/ics.cpp" \
   "$FW/caldav.cpp" "$FW/weather.cpp" "$FW/blocks.cpp" "$FW/blocksig.cpp" \
-  "$FW/fsstore.cpp" "$FW/portal.cpp" \
+  "$FW/fsstore.cpp" "$FW/portal.cpp" "$FW/style.cpp" \
   "$DEPS/Adafruit-GFX-Library/Adafruit_GFX.cpp" $CORE \
   -L "$DEPS/mbedtls/library" -lmbedcrypto
 (cd "$ROOT" && "$BUILD/render_preview")
