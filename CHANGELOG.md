@@ -14,8 +14,7 @@ on `main`.
   its faces instead of naming them, so a third look is one more table. The
   classic look is byte-identical to before (all five preview scenes compared).
   `tools/make_riposte_fonts.py` generates the seven faces (~21 KB of flash)
-  through a `gfx_font()` now shared with `make_gfx_font.py`;
-  `tools/frame_preview.py` puts a preview scene in the docs bezel.
+  through a `gfx_font()` now shared with `make_gfx_font.py`.
   Nine unit checks, `preview_riposte` scene, `docs/dashboard_riposte.png`.
 
 ### Fixed
