@@ -21,11 +21,14 @@
 //#define PANEL_75_HD_B            // 7.5" HD (B), 880x528, 3-color
 //#define PANEL_583_B_V2           // 5.83" (B) V2, 648x480, 3-color
 //#define PANEL_583_BW_V2          // 5.83" V2,    648x480, black/white
+//#define PANEL_75_BW_GDEY         // Good Display / Seeed 7.5", 800x480, b/w (GDEY075T7) - docs/LOW_COST.md
+//#define PANEL_42_BW              // Good Display 4.2", 400x300, b/w (GDEY042T81) - small, own layout
 //#define PANEL_CUSTOM             // any GxEPD2 driver: fill in the mapping below
 
 #if !defined(PANEL_75_B_V2) && !defined(PANEL_75_BW_V2) && !defined(PANEL_75_B_V1) && \
     !defined(PANEL_75_BW_V1) && !defined(PANEL_75_HD_B) && !defined(PANEL_583_B_V2) && \
-    !defined(PANEL_583_BW_V2) && !defined(PANEL_CUSTOM)
+    !defined(PANEL_583_BW_V2) && !defined(PANEL_75_BW_GDEY) && !defined(PANEL_42_BW) && \
+    !defined(PANEL_CUSTOM)
 #define PANEL_75_B_V2              // 7.5" (B) V2/V3, 800x480, black/white/red [default]
 #endif
 
@@ -70,6 +73,22 @@
   #define EPD_IS_3C 0
   #define PANEL_NAME "Waveshare 5.83\" V2"
   #define PANEL_REFRESH_S 4
+#elif defined(PANEL_75_BW_GDEY)
+  // The cheapest 800x480 route (docs/LOW_COST.md): Good Display's own panel,
+  // also sold by Seeed as the XIAO 7.5" panel. UC8179 like the Waveshare V2;
+  // if a panel ghosts on this driver, PANEL_75_BW_V2 drives it too.
+  #define EPD_DRIVER GxEPD2_750_GDEY075T7
+  #define EPD_IS_3C 0
+  #define PANEL_NAME "Good Display 7.5\" (GDEY075T7)"
+  #define PANEL_REFRESH_S 2
+#elif defined(PANEL_42_BW)
+  // 400x300 on the 16x12 grid is 25 px cells: the default layout does not
+  // fit, so lay out one or two blocks in the editor (a big-number and a
+  // list, say). Cheapest way to put a single number on a wall.
+  #define EPD_DRIVER GxEPD2_420_GDEY042T81
+  #define EPD_IS_3C 0
+  #define PANEL_NAME "Good Display 4.2\" (GDEY042T81)"
+  #define PANEL_REFRESH_S 2
 #elif defined(PANEL_CUSTOM)
   // Any class from GxEPD2's epd/ (b/w) or epd3c/ (3-color) family, e.g.:
   #define EPD_DRIVER GxEPD2_420c   // 4.2" 3-color, 400x300 (small — dense layout)
@@ -83,9 +102,11 @@
 // ---------------- Board / wiring (pick exactly one) ----------------
 // Uncomment ONE (or pass -DBOARD_… as a build flag):
 //#define BOARD_GENERIC_ESP32      // any ESP32 dev board wired per GxEPD2 convention
+//#define BOARD_XIAO_EPAPER        // Seeed XIAO ESP32-C3 on the XIAO ePaper Driver Board
 //#define BOARD_CUSTOM             // set the EPD_* pins yourself below
 
-#if !defined(BOARD_WAVESHARE_DRIVER) && !defined(BOARD_GENERIC_ESP32) && !defined(BOARD_CUSTOM)
+#if !defined(BOARD_WAVESHARE_DRIVER) && !defined(BOARD_GENERIC_ESP32) && \
+    !defined(BOARD_XIAO_EPAPER) && !defined(BOARD_CUSTOM)
 #define BOARD_WAVESHARE_DRIVER     // Waveshare e-Paper ESP32 Driver Board [default]
 #endif
 
@@ -113,6 +134,20 @@
   #define EPD_SCK  18
   #define EPD_MISO 19
   #define EPD_MOSI 23
+#elif defined(BOARD_XIAO_EPAPER)
+// Seeed XIAO ePaper Driver Board (24-pin FPC) with a XIAO ESP32-C3 on it,
+// which is also what the XIAO 7.5" ePaper Panel is inside. GPIO numbers
+// are the C3's; the D-names are the board's silkscreen. D9 (GPIO9) is
+// both the unused MISO and the C3's BOOT button, so MISO is left
+// unattached and GPIO9 stays the setup button.
+  #define BOARD_NAME "XIAO ESP32-C3 + XIAO ePaper Driver Board"
+  #define EPD_BUSY 4    // D2
+  #define EPD_RST  2    // D0
+  #define EPD_DC   5    // D3
+  #define EPD_CS   3    // D1
+  #define EPD_SCK  8    // D8
+  #define EPD_MISO -1   // D9, not attached (see above)
+  #define EPD_MOSI 10   // D10
 #elif defined(BOARD_CUSTOM)
 // Your wiring here:
   #define BOARD_NAME "Custom wiring"

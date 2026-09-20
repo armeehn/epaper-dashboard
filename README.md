@@ -41,6 +41,8 @@ SPI panel: pick one of seven presets in `firmware/epaper_dashboard/config.h`
 other driver class. Grid, fonts and colour handling adapt to the panel, and the
 setup page describes the one it is actually running on. Wiring and a printable
 enclosure: **[docs/HARDWARE.md](docs/HARDWARE.md)**, **[hardware/case/](hardware/case/)**.
+Building several? The cheapest supported bill of materials, priced, is
+**[docs/LOW_COST.md](docs/LOW_COST.md)** (about US$40 a panel for 7.5", US$23 for 4.2").
 
 ## Quick start
 
