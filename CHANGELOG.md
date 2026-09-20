@@ -15,6 +15,16 @@ on `main`.
   `preview_widget_limits` scene in `tools/render_preview.cpp`.
 
 ### Added
+- **A low-cost build.** `docs/LOW_COST.md` prices three ways to put a panel
+  on every wall, from list prices checked 2026-09-20. The pick, a XIAO
+  ESP32-C3 on Seeed's ePaper driver board with Good Display's 7.5" panel,
+  is about US$40 before shipping and now has everything it needs to be
+  flashed: `PANEL_75_BW_GDEY` (GDEY075T7), `BOARD_XIAO_EPAPER` (the driver
+  board's pins, MISO left off GPIO 9 so BOOT stays the setup button), a
+  `xiao-c3-75in-800x480-bw` CI target on FQBN `esp32:esp32:XIAO_ESP32C3`
+  with the C3's `0x0` bootloader offset, and two more host-compile
+  variants. `PANEL_42_BW` (GDEY042T81, 400×300) is the US$23 single-number
+  sign; it needs its own layout, which the preset comment says.
 - `hardware/case/fit_check.sh` and `hardware/case/render.sh`: the case's four
   fit invariants as a runnable check (the panel's insertion path, body against
   lid, the board carrier against the board and against the board's slide-in

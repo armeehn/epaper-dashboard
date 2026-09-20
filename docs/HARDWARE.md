@@ -18,6 +18,8 @@ Uncomment exactly one preset (or pass it as a build flag, which is what CI does)
 | `PANEL_75_HD_B` | 7.5" HD (B) | 880×528 | 3-color | ~25 s |
 | `PANEL_583_B_V2` | 5.83" (B) V2 | 648×480 | 3-color | ~23 s |
 | `PANEL_583_BW_V2` | 5.83" V2 | 648×480 | black/white | ~4 s |
+| `PANEL_75_BW_GDEY` | Good Display 7.5" · GDEY075T7 (also Seeed's 7.5" and the XIAO 7.5" panel) | 800×480 | black/white | ~2 s |
+| `PANEL_42_BW` | Good Display 4.2" · GDEY042T81 | 400×300 | black/white | ~2 s |
 | `PANEL_CUSTOM` | **any GxEPD2 class** | any | either | varies |
 
 For `PANEL_CUSTOM`, set the mapping yourself in `config.h`:
@@ -62,6 +64,28 @@ routes the panel to non-default SPI pins — the firmware remaps automatically:
 | CS | 15 |
 | SCK | 13 |
 | MOSI (DIN) | 14 |
+
+### XIAO ESP32-C3 on the XIAO ePaper Driver Board — `BOARD_XIAO_EPAPER`
+
+The cheapest supported build; costed in **[LOW_COST.md](LOW_COST.md)**. The
+same wiring is inside Seeed's ready-made **XIAO 7.5" ePaper Panel**. The
+board's silkscreen uses XIAO D-names; these are the C3's GPIOs behind them:
+
+| Signal | XIAO pin | GPIO |
+| --- | --- | --- |
+| BUSY | D2 | 4 |
+| RST | D0 | 2 |
+| DC | D3 | 5 |
+| CS | D1 | 3 |
+| SCK | D8 | 8 |
+| MOSI (DIN) | D10 | 10 |
+
+D9 (GPIO 9) is the panel's unused MISO *and* the C3's BOOT button, so the
+preset leaves MISO unattached and the setup gesture stays **RST, then hold
+BOOT**. Flash with the `xiao-c3-75in-800x480-bw` image from CI (the
+bootloader sits at `0x0` on a C3, which the factory image already accounts
+for) or `-DPANEL_75_BW_GDEY -DBOARD_XIAO_EPAPER` on FQBN
+`esp32:esp32:XIAO_ESP32C3`.
 
 ### Any ESP32 dev board + adapter — `BOARD_GENERIC_ESP32`
 

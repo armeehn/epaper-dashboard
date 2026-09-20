@@ -60,6 +60,10 @@ $CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_583_B_V2 \
   "$FW/epaper_dashboard.ino" -o "$BUILD/ino_583.o"
 $CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_75_BW_V1 -DBOARD_GENERIC_ESP32 \
   "$FW/epaper_dashboard.ino" -o "$BUILD/ino_bw_v1.o"
+$CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_75_BW_GDEY -DBOARD_XIAO_EPAPER \
+  "$FW/epaper_dashboard.ino" -o "$BUILD/ino_gdey_xiao.o"
+$CXX -Wall -Wextra -Wno-unused-parameter -c -x c++ -DPANEL_42_BW -DBOARD_XIAO_EPAPER \
+  "$FW/epaper_dashboard.ino" -o "$BUILD/ino_42_xiao.o"
 
 echo "== stack budget (portal handlers run on the 8 KB Arduino loop task) =="
 # Portal requests are served from setup() on loopTask, whose stack is 8192

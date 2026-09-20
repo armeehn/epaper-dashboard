@@ -42,6 +42,16 @@ jobs:
           - panel: PANEL_75_BW_V1
             slug: 75in-640x384-bw
             desc: 'Waveshare 7.5" V1 — 640x384, black/white'
+          # The low-cost build (docs/LOW_COST.md): a XIAO ESP32-C3 on Seeed's
+          # driver board, or the XIAO 7.5" panel, driving a GDEY075T7. Another
+          # chip, so it carries its own FQBN, esptool chip and bootloader offset.
+          - panel: PANEL_75_BW_GDEY
+            board: BOARD_XIAO_EPAPER
+            slug: xiao-c3-75in-800x480-bw
+            desc: 'XIAO ESP32-C3 + Good Display / Seeed 7.5" — 800x480, black/white'
+            fqbn: esp32:esp32:XIAO_ESP32C3
+            chip: esp32c3
+            boot_offset: '0x0'
 
     steps:
       - uses: actions/checkout@v5
@@ -89,9 +99,11 @@ jobs:
         run: |
           # min_spiffs = two OTA app slots; huge_app has only one and cannot
           # take over-the-air updates. Keep in sync with platformio.ini.
+          # A target names its FQBN only when it is not the plain ESP32; the
+          # board preset is optional the same way (the default is Waveshare's).
           arduino-cli compile \
-            --fqbn "esp32:esp32:esp32:PartitionScheme=min_spiffs" \
-            --build-property "compiler.cpp.extra_flags=-D${{ matrix.panel }}" \
+            --fqbn "${{ matrix.fqbn || 'esp32:esp32:esp32' }}:PartitionScheme=min_spiffs" \
+            --build-property "compiler.cpp.extra_flags=-D${{ matrix.panel }} ${{ matrix.board && format('-D{0}', matrix.board) || '' }}" \
             --export-binaries \
             firmware/epaper_dashboard 2>&1 | tee build.log
           {
@@ -107,7 +119,11 @@ jobs:
           # managed on the act runner image Gitea uses. No-op on GitHub's image,
           # which ships no EXTERNALLY-MANAGED marker.
           pip install --quiet --break-system-packages esptool==4.8.1
-          B=firmware/epaper_dashboard/build/esp32.esp32.esp32
+          FQBN="${{ matrix.fqbn || 'esp32:esp32:esp32' }}"
+          B=firmware/epaper_dashboard/build/${FQBN//:/.}
+          CHIP="${{ matrix.chip || 'esp32' }}"
+          # The classic ESP32 boots from 0x1000; the C3 (and S3) from 0x0.
+          BOOT="${{ matrix.boot_offset || '0x1000' }}"
           SLUG=${{ matrix.slug }}
           OUT=dist
           mkdir -p "$OUT"
@@ -115,8 +131,8 @@ jobs:
           BOOT_APP0=$(find ~/.arduino15/packages/esp32 -name boot_app0.bin | head -1)
           test -n "$BOOT_APP0" || { echo "boot_app0.bin not found in ESP32 core"; exit 1; }
 
-          python3 -m esptool --chip esp32 merge_bin -o "$OUT/epaper-dashboard-$SLUG-factory.bin" \
-            0x1000  "$B/epaper_dashboard.ino.bootloader.bin" \
+          python3 -m esptool --chip "$CHIP" merge_bin -o "$OUT/epaper-dashboard-$SLUG-factory.bin" \
+            "$BOOT" "$B/epaper_dashboard.ino.bootloader.bin" \
             0x8000  "$B/epaper_dashboard.ino.partitions.bin" \
             0xe000  "$BOOT_APP0" \
             0x10000 "$B/epaper_dashboard.ino.bin"
